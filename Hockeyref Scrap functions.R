@@ -1,25 +1,27 @@
 library(rvest)
 library(XML)
 library(stringr)
+library(tidyr)
 
 #stats codebook
 ###all = all available stats
 ###stateSep = seperate goals, assists, and points based on strength (PP, SH, EV)
 ###Cor = Corsi
 ###Fen = Fenwick
+###oiS = On-Ice shooting and save percentage
 ###PDO = PDO
-###ZS = even strength zone starts
 ###IceTime = Ice time
 ###Awards = Awards with placement
 ###pmBreak = plus/minus breakdown (GF, GA, etc.)
 ###PS = HockeyRef's point shares metric
+###xGF = expected Goals For percentage 
 
 #Season codebook
 ###R = Regular season
 ###P = Playoffs
 ###RP = Regular season and playoffs (in seperate tables)
 
-RefDraftScraper <- function(website, ageLimit, byYear = F, Season = "R") {
+RefDraftScraper <- function(website, ages = c(17, 50), stats = "all", Season = "R", sepTeam = F) {
   Parse <- read_html(website)
   Nodes <- html_nodes(Parse, "table")
   #Getting table of drafted players
@@ -47,18 +49,18 @@ RefDraftScraper <- function(website, ageLimit, byYear = F, Season = "R") {
   playerLinks <- Links[-goalieIndex]
   goalieLinks <- Links[goalieIndex]
   
-  returnTable$Player <- RefPlayerScraper(playerLinks[1], ageLimit, byYear)
+  returnTable$Player <- RefPlayerScraper(playerLinks[1], ages, stats, Season, sepTeam)
   playerLinks <- playerLinks[-1]
   if (Season == "R" | Season == "P") {
     #Single table returned
     for(player in playerLinks) {
-      playerTable <- RefPlayerScraper(player, ageLimit, byYear, Season)
+      playerTable <- RefPlayerScraper(player, ages, stats, Season, sepTeam)
       returnTable$Player <- rbind(returnTable$Player, playerTable)
     }
   } else {
     #Multiple tables returned
     for(player in playerLinks) {
-      playerTable <- RefPlayerScraper(player, ageLimit, byYear, Season)
+      playerTable <- RefPlayerScraper(player, ages, stats, Season, sepTeam)
       returnTable$Player$Regular <- rbind(returnTable$Regular, playerTable$Regular)
       returnTable$Player$Playoff <- rbind(returnTable$Playoff, playerTable$Playoff)
     } #for
@@ -68,7 +70,7 @@ RefDraftScraper <- function(website, ageLimit, byYear = F, Season = "R") {
 
 
 
-RefPlayerScraper <- function(website, ageLimit, byYear = F, stats, Season) {
+RefPlayerScraper <- function(website, ages = c(17,50), stats = "all", Season, sepTeam = F) {
   html <- readLines(website)
   #Get lines with the start and ends of tables
   start <- grep("<table", html)
@@ -81,35 +83,125 @@ RefPlayerScraper <- function(website, ageLimit, byYear = F, stats, Season) {
   }
   #creating data.frame objects with the html tables
   tables <- readHTMLTable(matched)
+  Stats = stats
+  if(Stats == "all") {
+    Stats <- c("Cor", "Fen", "PDO", "oiS", "IceTime", "Awards", "pmBreak", "PS", "xGF")
+  }
   
   #grabbing desired tables
   namesList <- names(tables)
   if(Season == "P" | Season == "RP") {
     playoffTable <- grep("stats_basic_plus_nhl_po", namesList)
-    if (length(playoffTable) == 0) {
-      remove(playoffTable)
-    } else {
+    if (length(playoffTable) != 0) {
       playoffTable <- tables[[playoffTable]]
+      playoffTable <- removeDuplicateYears(playoffTable)
     } #if(length(playoffTable) == 0)
   } #if(Season == "P" | Season == "RP")
   if(Season == "R" | Season == "RP") {
     #grabbing wanted stats
     generalStats <- grep("stats_basic_plus_nhl$", namesList)
-    generalStats <- tables[[generalStats]]
-    ev <- grep("EV", colnames(generalStats))
-    
-    #Based on stateSep inclusion in 'Stats'
-    if("stateSep" %in% Stats) {
-      colnames(generalStats)[ev[1]:(ev[1] + 3)] <- c("EVG", "PPG", "SHG", "GWG")
-      colnames(generalStats)[ev[2]:(ev[2] + 2)] <- c("EVA", "PPA", "SHA")
-      generalStats <- generalStats[,-((ev[1] - 5):(ev[1] - 3))]
-    } else {
-      generalStats <- generalStats[,-(ev[1]:(ev[2] + 2))]
-    }
-    
-    #Based on Awards inclusion in 'Stats'
-    if("Awards" %in% Stats) {
+    if(length(generalStats) != 0) {
+      generalStats <- tables[[generalStats]]
+      ev <- grep("EV", colnames(generalStats))
       
+      #Based on stateSep inclusion in 'Stats'
+      if("stateSep" %in% Stats) {
+        colnames(generalStats)[ev[1]:(ev[1] + 3)] <- c("EVG", "PPG", "SHG", "GWG")
+        colnames(generalStats)[ev[2]:(ev[2] + 2)] <- c("EVA", "PPA", "SHA")
+        generalStats <- generalStats[,-((ev[1] - 5):(ev[1] - 3))]
+      } else {
+        generalStats <- generalStats[,-(ev[1]:(ev[2] + 2))]
+      }
+      
+      #Based on Awards inclusion in 'Stats'
+      if(!("Awards" %in% Stats)) {
+        generalStats <- generalStats[,-ncol(generalStats)]
+      }
+      
+      #Based on Ice Time inclusion in 'Stats'
+      if(!("IceTime" %in% Stats)) {
+        index <- grep("TOI", colnames(generalStats))
+        generalStats <- generalStats[,-(index:(index + 1))]
+      }
+      generalStats <- removeDuplicateYears(generalStats)
+      #Based on Corsi, Fenwick, or PDO inclusion in 'Stats'
+      if("Cor" %in% Stats || "Fen" %in% Stats || "PDO" %in% Stats || "oiS" %in% Stats) {
+        possessionTable <- grep("skaters_advanced", namesList)
+        possessionTable <- tables[[possessionTable]]
+        possessionTable <- possessionTable[, -(20:21)]
+        possessionTable <- possessionTable[, -(2:6)]
+        #If Corsi is not wanted
+        if(!("Cor" %in% Stats)) {
+          index <- grep("CF$", colnames(possessionTable))
+          possessionTable <- possessionTable[,-(index:(index + 3))]
+        }
+        #If Fenwick is not wanted
+        if(!("Fen" %in% Stats)) {
+          index <- grep("FF$", colnames(possessionTable))
+          possessionTable <- possessionTable[,-(index:(index + 3))]
+        }
+        #If PDO is not wanted
+        if(!("PDO" %in% Stats)) {
+          index <- grep("PDO", colnames(possessionTable))
+          possessionTable <- possessionTable[,-index]
+        }
+        #If On-Ice shooting and save percentage is not wanted
+        if(!("oiS" %in% Stats)) {
+          index <- grep("oiGF", colnames(possessionTable))
+          possessionTable <- possessionTable[,-(index:(index + 3))]
+        }
+        possessionTable <- removeDuplicateYears(possessionTable)
+        generalStats <- merge(x = generalStats, y = possessionTable, by = "Season", all.x = T)
+      }
+      
+      #Based on breaking up plus/minus, Point-Shares, or expected GF% being in Stats
+      if("pmBreak" %in% Stats || "PS" %in% Stats || "xGF" %in% Stats) {
+        miscTable <- grep("stats_misc_plus_nhl", namesList)
+        miscTable <-tables[[miscTable]]
+        miscTable <- miscTable[,-(2:16)]
+        index <- grep("Att.", colnames(miscTable))
+        miscTable <- miscTable[,-(index:(index + 3))]
+        #Based on inclusion of plus/minus in Stats
+        if ("pmBreak" %in% Stats) {
+          index <- grep("+\\-", colnames(generalStats))
+          generalStats <- generalStats[,-index]
+        } else {
+          index <- grep("TGF", colnames(miscTable))
+          miscTable <- miscTable[,-(index:(index + 4))]
+        }
+        #If point-shares are not wanted
+        if(!("PS" %in% Stats)) {
+          index <- grep("OPS", colnames(miscTable))
+          miscTable <- miscTable[,-(index:(index+2))]
+        }
+        #If Expected goals for is not wanted
+        if(!("xGF" %in% Stats)) {
+          index <- grep("xGF", colnames(miscTable))
+          miscTable <- miscTable[-(index:(index + 1))]
+        }
+        miscTable <- miscTable[,-(ncol(miscTable))]
+        miscTable <- removeDuplicateYears(miscTable)
+        generalStats <- merge(x = generalStats, y = miscTable, by = "Season", all.x = T)
+      }
     }
+  } #if(Season == "R" | Season == "RP")
+  
+  #Constricting tables to AgeLimit
+  generalStats$Age <- as.numeric(levels(generalStats$Age))[generalStats$Age]
+  generalStats <- generalStats[generalStats$Age >= ages[1],]
+  generalStats <- generalStats[generalStats$Age <= ages[2],]
+  
+  #Constructing return structures
+  if(Season == "RP") {
+    list(Regular = generalStats, Playoff = playoffTable)
+  } else if(Season == "R") {
+    generalStats
+  } else if (Season == "P") {
+    playoffTable
   }
+}
+
+removeDuplicateYears <- function(Table) {
+  duplicate <- duplicated(Table$Age)
+  Table[!duplicate,]
 }
