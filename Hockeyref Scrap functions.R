@@ -21,7 +21,7 @@ library(tidyr)
 ###P = Playoffs
 ###RP = Regular season and playoffs (in seperate tables)
 
-RefDraftScraper <- function(website, ages = c(17, 50), stats = "all", Season = "R", sepTeam = F) {
+RefDraftScraper <- function(website, ages = c(17, 50), stats = "all", Season = "R") {
   Parse <- read_html(website)
   Nodes <- html_nodes(Parse, "table")
   #Getting table of drafted players
@@ -49,18 +49,19 @@ RefDraftScraper <- function(website, ages = c(17, 50), stats = "all", Season = "
   playerLinks <- Links[-goalieIndex]
   goalieLinks <- Links[goalieIndex]
   
-  returnTable$Player <- RefPlayerScraper(playerLinks[1], ages, stats, Season, sepTeam)
+  returnTable <- list(Player = RefPlayerScraper(playerLinks[1], ages, stats, Season),
+                      Goalie = RefGoalieScraper(goalieLinks[1], ages, Season))
   playerLinks <- playerLinks[-1]
   if (Season == "R" | Season == "P") {
     #Single table returned
     for(player in playerLinks) {
-      playerTable <- RefPlayerScraper(player, ages, stats, Season, sepTeam)
+      playerTable <- RefPlayerScraper(player, ages, stats, Season)
       returnTable$Player <- rbind(returnTable$Player, playerTable)
     }
   } else {
     #Multiple tables returned
     for(player in playerLinks) {
-      playerTable <- RefPlayerScraper(player, ages, stats, Season, sepTeam)
+      playerTable <- RefPlayerScraper(player, ages, stats, Season)
       returnTable$Player$Regular <- rbind(returnTable$Regular, playerTable$Regular)
       returnTable$Player$Playoff <- rbind(returnTable$Playoff, playerTable$Playoff)
     } #for
@@ -70,20 +71,8 @@ RefDraftScraper <- function(website, ages = c(17, 50), stats = "all", Season = "
 
 
 
-RefPlayerScraper <- function(website, ages = c(17,50), stats = "all", Season, sepTeam = F) {
-  html <- readLines(website)
-  #Get lines with the start and ends of tables
-  start <- grep("<table", html)
-  end <- grep("</table>", html)
-  matched <- paste(html[start[1]:end[1]], collapse = "\n")
-  val <- 2
-  while(val <= length(start)) {
-    matched <- append(matched, paste(html[start[val]:end[val]], collapse = "\n"))
-    val <- val + 1
-  }
-  #creating data.frame objects with the html tables
-  tables <- readHTMLTable(matched)
-  Stats = stats
+RefPlayerScraper <- function(website, ages = c(17,50), Stats = "all", Season = "R") {
+  tables <- getTables(website)
   if(Stats == "all") {
     Stats <- c("Cor", "Fen", "PDO", "oiS", "IceTime", "Awards", "pmBreak", "PS", "xGF")
   }
@@ -95,6 +84,11 @@ RefPlayerScraper <- function(website, ages = c(17,50), stats = "all", Season, se
     if (length(playoffTable) != 0) {
       playoffTable <- tables[[playoffTable]]
       playoffTable <- removeDuplicateYears(playoffTable)
+      
+      #Constricting table to age limit
+      playoffTable$Age <- as.numeric(levels(playoffTable$Age))[playoffTable$Age]
+      playoffTable <- playoffTable[playoffTable$Age >= ages[1],]
+      playoffTable <- playoffTable[playoffTable$Age <= ages[2],]
     } #if(length(playoffTable) == 0)
   } #if(Season == "P" | Season == "RP")
   if(Season == "R" | Season == "RP") {
@@ -128,8 +122,11 @@ RefPlayerScraper <- function(website, ages = c(17,50), stats = "all", Season, se
       if("Cor" %in% Stats || "Fen" %in% Stats || "PDO" %in% Stats || "oiS" %in% Stats) {
         possessionTable <- grep("skaters_advanced", namesList)
         possessionTable <- tables[[possessionTable]]
-        possessionTable <- possessionTable[, -(20:21)]
-        possessionTable <- possessionTable[, -(2:6)]
+        #removing zone starts
+        index <- grep("oZS", colnames(possessionTable))
+        if (length(index) != 0) {
+          possessionTable <- possessionTable[, -(index:(index + 1))]
+        }
         #If Corsi is not wanted
         if(!("Cor" %in% Stats)) {
           index <- grep("CF$", colnames(possessionTable))
@@ -151,6 +148,7 @@ RefPlayerScraper <- function(website, ages = c(17,50), stats = "all", Season, se
           possessionTable <- possessionTable[,-(index:(index + 3))]
         }
         possessionTable <- removeDuplicateYears(possessionTable)
+        possessionTable <- possessionTable[, -(2:6)]
         generalStats <- merge(x = generalStats, y = possessionTable, by = "Season", all.x = T)
       }
       
@@ -158,9 +156,10 @@ RefPlayerScraper <- function(website, ages = c(17,50), stats = "all", Season, se
       if("pmBreak" %in% Stats || "PS" %in% Stats || "xGF" %in% Stats) {
         miscTable <- grep("stats_misc_plus_nhl", namesList)
         miscTable <-tables[[miscTable]]
-        miscTable <- miscTable[,-(2:16)]
         index <- grep("Att.", colnames(miscTable))
-        miscTable <- miscTable[,-(index:(index + 3))]
+        if (length(index) != 0) {
+          miscTable <- miscTable[,-(index:(index + 3))]
+        }
         #Based on inclusion of plus/minus in Stats
         if ("pmBreak" %in% Stats) {
           index <- grep("+\\-", colnames(generalStats))
@@ -181,15 +180,19 @@ RefPlayerScraper <- function(website, ages = c(17,50), stats = "all", Season, se
         }
         miscTable <- miscTable[,-(ncol(miscTable))]
         miscTable <- removeDuplicateYears(miscTable)
+        ####################################
+        #want to fix this to be more generic
+        ####################################
+        miscTable <- miscTable[,-(2:16)]
         generalStats <- merge(x = generalStats, y = miscTable, by = "Season", all.x = T)
       }
+      #Constricting table to age limit
+      generalStats$Age <- as.numeric(levels(generalStats$Age))[generalStats$Age]
+      generalStats <- generalStats[generalStats$Age >= ages[1],]
+      generalStats <- generalStats[generalStats$Age <= ages[2],]
     }
   } #if(Season == "R" | Season == "RP")
   
-  #Constricting tables to AgeLimit
-  generalStats$Age <- as.numeric(levels(generalStats$Age))[generalStats$Age]
-  generalStats <- generalStats[generalStats$Age >= ages[1],]
-  generalStats <- generalStats[generalStats$Age <= ages[2],]
   
   #Constructing return structures
   if(Season == "RP") {
@@ -199,6 +202,37 @@ RefPlayerScraper <- function(website, ages = c(17,50), stats = "all", Season, se
   } else if (Season == "P") {
     playoffTable
   }
+}
+
+RefGoalieScraper <- function(website, ages = c(17,50), Season = "R") {
+  tables <- getTables(website)
+  namesList <- names(tables)
+  if(Season = "P" | Season = "RP") {
+    playoffTable <- grep("stats_basic_plus_nhl_po", namesList)
+    if(length(playoffTable) != 0) {
+      playoffTable <- tables[[playoffTable]]
+      playoffTable <- playoffTable[,-c(5,10)]
+      
+    }
+  }
+  if(Season = "R" | Season = "RP") {
+    
+  }
+}
+
+getTables <- function(website) {
+  html <- readLines(website)
+  #Get lines with the start and ends of tables
+  start <- grep("<table", html)
+  end <- grep("</table>", html)
+  matched <- paste(html[start[1]:end[1]], collapse = "\n")
+  val <- 2
+  while(val <= length(start)) {
+    matched <- append(matched, paste(html[start[val]:end[val]], collapse = "\n"))
+    val <- val + 1
+  }
+  #creating data.frame objects with the html tables
+  readHTMLTable(matched)
 }
 
 removeDuplicateYears <- function(Table) {
