@@ -21,7 +21,7 @@ library(tidyr)
 ###P = Playoffs
 ###RP = Regular season and playoffs (in seperate tables)
 
-RefDraftScraper <- function(website, ages = c(17, 50), stats = "all", Season = "R") {
+RefDraftScraper <- function(website, ages = c(17, 50), playerStats = "all", goalieStats = "all", Season = "R") {
   Parse <- read_html(website)
   Nodes <- html_nodes(Parse, "table")
   #Getting table of drafted players
@@ -49,19 +49,19 @@ RefDraftScraper <- function(website, ages = c(17, 50), stats = "all", Season = "
   playerLinks <- Links[-goalieIndex]
   goalieLinks <- Links[goalieIndex]
   
-  returnTable <- list(Player = RefPlayerScraper(playerLinks[1], ages, stats, Season),
-                      Goalie = RefGoalieScraper(goalieLinks[1], ages, Season))
+  returnTable <- list(Player = RefPlayerScraper(playerLinks[1], ages, playerStats, Season),
+                      Goalie = RefGoalieScraper(goalieLinks[1], ages, goalieStats, Season))
   playerLinks <- playerLinks[-1]
   if (Season == "R" | Season == "P") {
     #Single table returned
     for(player in playerLinks) {
-      playerTable <- RefPlayerScraper(player, ages, stats, Season)
+      playerTable <- RefPlayerScraper(player, ages, playerStats, Season)
       returnTable$Player <- rbind(returnTable$Player, playerTable)
     }
   } else {
     #Multiple tables returned
     for(player in playerLinks) {
-      playerTable <- RefPlayerScraper(player, ages, stats, Season)
+      playerTable <- RefPlayerScraper(player, ages, playerStats, Season)
       returnTable$Player$Regular <- rbind(returnTable$Regular, playerTable$Regular)
       returnTable$Player$Playoff <- rbind(returnTable$Playoff, playerTable$Playoff)
     } #for
@@ -204,19 +204,74 @@ RefPlayerScraper <- function(website, ages = c(17,50), Stats = "all", Season = "
   }
 }
 
-RefGoalieScraper <- function(website, ages = c(17,50), Season = "R") {
+RefGoalieScraper <- function(website, ages = c(17,50), Stats, Season = "R") {
   tables <- getTables(website)
   namesList <- names(tables)
-  if(Season = "P" | Season = "RP") {
+  if(Season == "P" | Season == "RP") {
     playoffTable <- grep("stats_basic_plus_nhl_po", namesList)
     if(length(playoffTable) != 0) {
       playoffTable <- tables[[playoffTable]]
       playoffTable <- playoffTable[,-c(5,10)]
-      
+      index <- grep("GA%", colnames(playoffTable))
+      playoffTable <- playoffTable[,-index]
+      index <- grep("GAA", colnames(playoffTable))
+      if(length(index) == 2) {
+        playoffTable <- playoffTable[,-index[2]]
+      }
+      if (!("QS" %in% Stats)) {
+        index <- grep("QS", colnames(playoffTable))
+        playoffTable <- playoffTable[,-(index:(index + 2))]
+      }
+      if (!("GSAA" %in% Stats)) {
+        index <- grep("GSAA", colnames(playoffTable))
+        playoffTable <- playoffTable[,-index]
+      }
+      if (!("Scoring" %in% Stats)) {
+        index <- grep("G$", colnames(playoffTable))
+        playoffTable <- playoffTable[,-(index:(index + 3))]
+      }
+      if (!("Awards" %in% Stats)) {
+        index <- grep("Awards", colnames(playoffTable))
+        playoffTable <- playoffTable[,-index]
+      }
+      playoffTable <- removeDuplicateYears(playoffTable)
     }
   }
-  if(Season = "R" | Season = "RP") {
-    
+  if(Season == "R" | Season == "RP") {
+    generalStats <- grep("stats_basic_plus_nhl$", namesList)
+    if(length(generalStats) != 0) {
+      generalStats <- tables[[generalStats]]
+      index <- grep("GAA", colnames(playoffTable))
+      if(length(index) == 2) {
+        playoffTable <- playoffTable[,-index[2]]
+      }
+      if (!("QS" %in% Stats)) {
+        index <- grep("QS", colnames(playoffTable))
+        playoffTable <- playoffTable[,-(index:(index + 2))]
+      }
+      if (!("GSAA" %in% Stats)) {
+        index <- grep("GSAA", colnames(playoffTable))
+        playoffTable <- playoffTable[,-((index - 1):index)]
+      }
+      if (!("Scoring" %in% Stats)) {
+        index <- grep("G$", colnames(playoffTable))
+        playoffTable <- playoffTable[,-(index:(index + 3))]
+      }
+      if (!("Awards" %in% Stats)) {
+        index <- grep("Awards", colnames(playoffTable))
+        playoffTable <- playoffTable[,-index]
+      }
+      generalStats <- removeDuplicateYears(generalStats)
+    }
+  }
+  
+  #Constructing return structures
+  if(Season == "RP") {
+    list(Regular = generalStats, Playoff = playoffTable)
+  } else if(Season == "R") {
+    generalStats
+  } else if (Season == "P") {
+    playoffTable
   }
 }
 
