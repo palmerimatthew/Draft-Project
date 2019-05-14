@@ -72,7 +72,7 @@ RefDraftScraper <- function(website, ages = c(17, 50), playerStats = "all", goal
 
 
 RefPlayerScraper <- function(website, ages = c(17,50), Stats = "all", Season = "R") {
-  tables <- getTables(website)
+  tables <- getHockeyRefTables(website)
   if(Stats == "all") {
     Stats <- c("Cor", "Fen", "PDO", "oiS", "IceTime", "Awards", "pmBreak", "PS", "xGF")
   }
@@ -80,10 +80,9 @@ RefPlayerScraper <- function(website, ages = c(17,50), Stats = "all", Season = "
   #grabbing desired tables
   namesList <- names(tables)
   if(Season == "P" | Season == "RP") {
-    playoffTable <- grep("stats_basic_plus_nhl_po", namesList)
+    playoffTable <- grep("stats_basic(.*?)nhl_po", namesList)
     if (length(playoffTable) != 0) {
       playoffTable <- tables[[playoffTable]]
-      playoffTable <- removeDuplicateYears(playoffTable)
       
       #Constricting table to age limit
       playoffTable$Age <- as.numeric(levels(playoffTable$Age))[playoffTable$Age]
@@ -93,7 +92,7 @@ RefPlayerScraper <- function(website, ages = c(17,50), Stats = "all", Season = "
   } #if(Season == "P" | Season == "RP")
   if(Season == "R" | Season == "RP") {
     #grabbing wanted stats
-    generalStats <- grep("stats_basic_plus_nhl$", namesList)
+    generalStats <- grep("stats_basic(.*?)nhl$", namesList)
     if(length(generalStats) != 0) {
       generalStats <- tables[[generalStats]]
       ev <- grep("EV", colnames(generalStats))
@@ -121,35 +120,37 @@ RefPlayerScraper <- function(website, ages = c(17,50), Stats = "all", Season = "
       #Based on Corsi, Fenwick, or PDO inclusion in 'Stats'
       if("Cor" %in% Stats || "Fen" %in% Stats || "PDO" %in% Stats || "oiS" %in% Stats) {
         possessionTable <- grep("skaters_advanced", namesList)
-        possessionTable <- tables[[possessionTable]]
-        #removing zone starts
-        index <- grep("oZS", colnames(possessionTable))
-        if (length(index) != 0) {
-          possessionTable <- possessionTable[, -(index:(index + 1))]
+        if(length(possessionTable) != 0) {
+          possessionTable <- tables[[possessionTable]]
+          #removing zone starts
+          index <- grep("oZS", colnames(possessionTable))
+          if (length(index) != 0) {
+            possessionTable <- possessionTable[, -(index:(index + 1))]
+          }
+          #If Corsi is not wanted
+          if(!("Cor" %in% Stats)) {
+            index <- grep("CF$", colnames(possessionTable))
+            possessionTable <- possessionTable[,-(index:(index + 3))]
+          }
+          #If Fenwick is not wanted
+          if(!("Fen" %in% Stats)) {
+            index <- grep("FF$", colnames(possessionTable))
+            possessionTable <- possessionTable[,-(index:(index + 3))]
+          }
+          #If PDO is not wanted
+          if(!("PDO" %in% Stats)) {
+            index <- grep("PDO", colnames(possessionTable))
+            possessionTable <- possessionTable[,-index]
+          }
+          #If On-Ice shooting and save percentage is not wanted
+          if(!("oiS" %in% Stats)) {
+            index <- grep("oiGF", colnames(possessionTable))
+            possessionTable <- possessionTable[,-(index:(index + 3))]
+          }
+          possessionTable <- removeDuplicateYears(possessionTable)
+          possessionTable <- possessionTable[, -(2:6)]
+          generalStats <- merge(x = generalStats, y = possessionTable, by = "Season", all.x = T)
         }
-        #If Corsi is not wanted
-        if(!("Cor" %in% Stats)) {
-          index <- grep("CF$", colnames(possessionTable))
-          possessionTable <- possessionTable[,-(index:(index + 3))]
-        }
-        #If Fenwick is not wanted
-        if(!("Fen" %in% Stats)) {
-          index <- grep("FF$", colnames(possessionTable))
-          possessionTable <- possessionTable[,-(index:(index + 3))]
-        }
-        #If PDO is not wanted
-        if(!("PDO" %in% Stats)) {
-          index <- grep("PDO", colnames(possessionTable))
-          possessionTable <- possessionTable[,-index]
-        }
-        #If On-Ice shooting and save percentage is not wanted
-        if(!("oiS" %in% Stats)) {
-          index <- grep("oiGF", colnames(possessionTable))
-          possessionTable <- possessionTable[,-(index:(index + 3))]
-        }
-        possessionTable <- removeDuplicateYears(possessionTable)
-        possessionTable <- possessionTable[, -(2:6)]
-        generalStats <- merge(x = generalStats, y = possessionTable, by = "Season", all.x = T)
       }
       
       #Based on breaking up plus/minus, Point-Shares, or expected GF% being in Stats
@@ -178,7 +179,10 @@ RefPlayerScraper <- function(website, ages = c(17,50), Stats = "all", Season = "
           index <- grep("xGF", colnames(miscTable))
           miscTable <- miscTable[-(index:(index + 1))]
         }
-        miscTable <- miscTable[,-(ncol(miscTable))]
+        index <- grep("E+", colnames(miscTable))
+        if (length(index) != 0) {
+          miscTable <- miscTable[,-index]
+        }
         miscTable <- removeDuplicateYears(miscTable)
         ####################################
         #want to fix this to be more generic
@@ -193,7 +197,6 @@ RefPlayerScraper <- function(website, ages = c(17,50), Stats = "all", Season = "
     }
   } #if(Season == "R" | Season == "RP")
   
-  
   #Constructing return structures
   if(Season == "RP") {
     list(Regular = generalStats, Playoff = playoffTable)
@@ -205,7 +208,7 @@ RefPlayerScraper <- function(website, ages = c(17,50), Stats = "all", Season = "
 }
 
 RefGoalieScraper <- function(website, ages = c(17,50), Stats, Season = "R") {
-  tables <- getTables(website)
+  tables <- getHockeyRefTables(website)
   namesList <- names(tables)
   if(Season == "P" | Season == "RP") {
     playoffTable <- grep("stats_basic_plus_nhl_po", namesList)
@@ -275,7 +278,19 @@ RefGoalieScraper <- function(website, ages = c(17,50), Stats, Season = "R") {
   }
 }
 
-getTables <- function(website) {
+changeToNumeric <- function(table) {
+  i = 1
+  while(i <= ncol(table)) {
+    suppressWarnings(new <- as.numeric(levels(table[,i]))[table[,i]])
+    if(!all(is.na(new))) {
+      table[,i] <- new
+    }
+    i <- i + 1
+  }
+  table
+}
+
+getHockeyRefTables <- function(website) {
   html <- readLines(website)
   #Get lines with the start and ends of tables
   start <- grep("<table", html)
