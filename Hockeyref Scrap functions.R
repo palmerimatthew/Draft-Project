@@ -71,7 +71,7 @@ RefDraftScraper <- function(website, ages = c(17, 50), playerStats = "all", goal
 
 
 
-RefPlayerScraper <- function(website, ages = c(17,50), Stats = "all", Season = "R") {
+RefPlayerScraper <- function(website, ages = c(17,50), Stats = "all", Season = "R", sepTeam = F) {
   tables <- getHockeyRefTables(website)
   if(Stats == "all") {
     Stats <- c("Cor", "Fen", "PDO", "oiS", "IceTime", "Awards", "pmBreak", "PS", "xGF")
@@ -116,7 +116,7 @@ RefPlayerScraper <- function(website, ages = c(17,50), Stats = "all", Season = "
         index <- grep("TOI", colnames(generalStats))
         generalStats <- generalStats[,-(index:(index + 1))]
       }
-      generalStats <- removeDuplicateYears(generalStats)
+      generalStats <- removeDuplicateYears(generalStats, sepTeam)
       #Based on Corsi, Fenwick, or PDO inclusion in 'Stats'
       if("Cor" %in% Stats || "Fen" %in% Stats || "PDO" %in% Stats || "oiS" %in% Stats) {
         possessionTable <- grep("skaters_advanced", namesList)
@@ -147,7 +147,7 @@ RefPlayerScraper <- function(website, ages = c(17,50), Stats = "all", Season = "
             index <- grep("oiGF", colnames(possessionTable))
             possessionTable <- possessionTable[,-(index:(index + 3))]
           }
-          possessionTable <- removeDuplicateYears(possessionTable)
+          possessionTable <- removeDuplicateYears(possessionTable, sepTeam)
           possessionTable <- possessionTable[, -(2:6)]
           generalStats <- merge(x = generalStats, y = possessionTable, by = "Season", all.x = T)
         }
@@ -183,7 +183,7 @@ RefPlayerScraper <- function(website, ages = c(17,50), Stats = "all", Season = "
         if (length(index) != 0) {
           miscTable <- miscTable[,-index]
         }
-        miscTable <- removeDuplicateYears(miscTable)
+        miscTable <- removeDuplicateYears(miscTable, sepTeam)
         ####################################
         #want to fix this to be more generic
         ####################################
@@ -207,7 +207,10 @@ RefPlayerScraper <- function(website, ages = c(17,50), Stats = "all", Season = "
   }
 }
 
-RefGoalieScraper <- function(website, ages = c(17,50), Stats, Season = "R") {
+RefGoalieScraper <- function(website, ages = c(17,50), Stats, Season = "R", sepTeam = F) {
+  if (Stats == "all") {
+    Stats = c("GA%", "GAA", "QS", "GSAA", "Scoring", "Awards")
+  }
   tables <- getHockeyRefTables(website)
   namesList <- names(tables)
   if(Season == "P" | Season == "RP") {
@@ -237,7 +240,7 @@ RefGoalieScraper <- function(website, ages = c(17,50), Stats, Season = "R") {
         index <- grep("Awards", colnames(playoffTable))
         playoffTable <- playoffTable[,-index]
       }
-      playoffTable <- removeDuplicateYears(playoffTable)
+      playoffTable <- removeDuplicateYears(playoffTable, sepTeam)
     }
   }
   if(Season == "R" | Season == "RP") {
@@ -264,7 +267,7 @@ RefGoalieScraper <- function(website, ages = c(17,50), Stats, Season = "R") {
         index <- grep("Awards", colnames(playoffTable))
         playoffTable <- playoffTable[,-index]
       }
-      generalStats <- removeDuplicateYears(generalStats)
+      generalStats <- removeDuplicateYears(generalStats, sepTeam)
     }
   }
   
@@ -305,7 +308,32 @@ getHockeyRefTables <- function(website) {
   readHTMLTable(matched)
 }
 
-removeDuplicateYears <- function(Table) {
-  duplicate <- duplicated(Table$Age)
-  Table[!duplicate,]
+removeDuplicateYears <- function(Table, boolean) {
+  if (boolean) {
+    
+  } else {
+    duplicate <- duplicated(Table$Age)
+    Table[!duplicate,]
+  }
+}
+
+tableEquals <- function(table1, table2) {
+  if(ncol(table1) == ncol(table2) && nrow(table1) == nrow(table2)) {
+    i = 1
+    while(i <= nrow(table1)) {
+      j = 1
+      while(j <= ncol(table1)) {
+        if((is.na(table1[i,j]) && !is.na(table2[i,j]) || (!is.na(table1[i,j])) && is.na(table2[i,j]))) {
+          FALSE
+        } else if(!is.na(table1[i,j]) && !is.na(table2[i,j])) {
+          if(table1[i,j] != table2[i,j]) {
+            FALSE
+          }
+        }
+        j <- j + 1
+      }
+      i <- i + 1
+    }
+  }
+  TRUE
 }
