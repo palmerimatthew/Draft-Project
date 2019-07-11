@@ -1,19 +1,35 @@
+require(rvest)
+require(stringr)
+require(magrittr)
+require(dplyr)
+require(tidyr)
+
 draftScraper <- function(Data, draft = T, Agerange = c(17, 25), draft.year = T, draft.pick = T, Round = T, 
                          Draft.Elig = T, Agerel = "9/15", Goalie = F, Position = T, Shoots = T, 
-                         Stats = c("S", "Team", "League", "GP", "G", "A", "TP", "PIM", "+/-"),
+                         Stats = c("S", "Team", "League", "GP", "G", "A", "TP", "PIM", "+/-", "sv%", "GAA"),
                          Place.birth = T, Pbsep = T, Country = T, Height = T, Weight = T, date.birth = T, dbsep = T, Drafted.team = T) {
+  links <- paste(readLines(Data), collapse = "\n") %>%
+    str_match_all("<a href=\"(.*?)\"") %>%
+    extract2(1)  %>%
+    .[-(1:300),2] %>%
+    .[grep('player',.)]
+  goalie_spots <- read_html(Data) %>%
+    html_nodes("table") %>%
+    html_table(header = T, fill = T) %>%
+    extract2(2) %>%
+    filter(!Team %in% paste('ROUND', c(1,2,3,4,5,6,7,8,9))) %>%
+    separate(Player, c('Name', 'Position'), '\\(') %>%
+    use_series(Position) %>%
+    substr(1,1) %>%
+    grep("G", .)
+  player_links <- links[!goalie_spots]
+  if (Goalie) {
+    goalie_links <- links[goalie_spots]
+  }
+  player_,template <- indScraper(playerLinks[1], Agerange, draft.year, draft.pick, Round, Draft.Elig, Agerel, Goalie, Position, 
+                         Shoots, Stats, Place.birth, Pbsep, Country, Height, Weight, date.birth, dbsep, Drafted.team)
   
 }
-
-
-
-
-
-
-
-
-
-
 
 
 
