@@ -1,7 +1,7 @@
-library(rvest)
-library(XML)
-library(stringr)
-library(tidyr)
+require(rvest)
+require(XML)
+require(stringr)
+require(tidyr)
 
 #stats codebook
 ###all = all available stats
