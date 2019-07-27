@@ -4,12 +4,13 @@ require(magrittr)
 require(dplyr)
 require(tidyr)
 require(XML)
+require(lubridate)
 
 draftScraper <- function(Data, draft = T, Agerange = c(17, 25), draft.year = T, draft.pick = T, round = T, 
                          draft.elig = T, Agerel = "9/15", Goalie = F, position = T, shoots = T, 
                          Stats = c("S", "Team", "League", "GP", "G", "A", "TP", "PIM", "+/-", "sv%", "GAA"),
-                         Place.birth = T, Pbsep = T, Country = T, Height = T, Weight = T, date.birth = T, 
-                         dbsep = T, drafted.team = T, Season = 'R') {
+                         place.birth = T, Pbsep = T, Country = T, Height = T, Weight = T, date.birth = T, 
+                         dbsep = T, drafted.team = T, reg.playoffs = 'R') {
   links <- paste(readLines(Data), collapse = "\n") %>%
     str_match_all("<a href=\"(.*?)\"") %>%
     extract2(1)  %>%
@@ -29,7 +30,7 @@ draftScraper <- function(Data, draft = T, Agerange = c(17, 25), draft.year = T, 
     goalie_links <- links[goalie_spots]
   }
   player_template <- indScraper(playerLinks[1], Agerange, draft.year, draft.pick, round, draft.elig, Agerel, position, 
-                         shoots, Stats, Place.birth, Pbsep, Country, Height, Weight, date.birth, dbsep, drafted.team, Season)
+                         shoots, Stats, place.birth, Pbsep, Country, Height, Weight, date.birth, dbsep, drafted.team, reg.playoffs)
   
 }
 
@@ -37,14 +38,30 @@ draftScraper <- function(Data, draft = T, Agerange = c(17, 25), draft.year = T, 
 IndScraper <- function(website, Agerange = c(17, 25), draft.year = T, draft.pick = T, round = T, 
                        draft.elig = T, Agerel = "9/15", position = T, shoots = T, 
                        Stats = c("S", "Team", "League", "GP", "G", "A", "TP", "PIM", "+/-"),
-                       Place.birth = T, Pbsep = T, Country = T, Height = T, Weight = T, date.birth = T, 
-                       dbsep = T, drafted.team = T, Season = 'R') {
+                       place.birth = T, Pbsep = T, Country = T, Height = T, Weight = T, date.birth = T, 
+                       dbsep = T, drafted.team = T, reg.playoffs = 'R') {
   
   #Preliminary tables and configuring information ----
   html <- website %>%
     readLines()
+  
+  #information section
   information <- get_EP_Information(html)
-  stat_table <- get_EP_table(html, Season)
+  
+  #Birthdate for age in table
+  Birth_Date <- information %>%
+    .[grep('Date of Birth', .) + 2] %>%
+    str_split('<|>') %>%
+    extract2(1) %>%
+    .[3] %>%
+    trimws() %>%
+    mdy()
+  
+  stat_table <- get_EP_table(html, reg.playoffs) #Getting stats table
+    mutate(Season = add_missing_season(as.character(S)), #filling in missing season data
+           Age = exact_age(Season, Birth_Date, Agerel)) #Adding age to table
+  
+  
   
   #Gathering desired information ----
   
@@ -103,21 +120,49 @@ IndScraper <- function(website, Agerange = c(17, 25), draft.year = T, draft.pick
   
   #Shoot and Position information
   if(shoots) {
+    
     Shoots <- information %>%
       .[grep('Shoots', .) + 1] %>%
       str_split('<|>') %>%
       extract2(1) %>%
       .[length(.) - 2] %>%
       trimws()
+    
   }
   if(position) {
+    
     Position <- information %>%
       .[grep('Position', .) + 2] %>%
       trimws()
-    #Added shooting side for defensemen
+    #Add shooting side for defensemen
   }
   
   #Birthplace information
+  if(place.birth) {
+    
+    Birth_Place <- information %>%
+      .[grep('Place of Birth', .) + 2] %>%
+      str_split('<|>') %>%
+      extract2(1) %>%
+      .[grep(',', .)] %>%
+      trimws()
+    
+    if(Pbsep) {
+      
+      split_birth <- Birth_Place %>%
+        str_split(', ') %>%
+        extract2(1)
+      
+      Birth_City <- split_birth[1]
+      
+      Birth_State <- ifelse(length(split_birth) == 3, split_birth[2], NA)
+      
+      Birth_Country <- split_birth %>%
+        .[length(.)]
+    }
+  }
+  
+  
 }
 
 get_EP_Information <- function(html) {
@@ -164,12 +209,51 @@ get_EP_table <- function(html, Season) {
     
   } else if (Season == 'RP') {
     regularseason_table <- full_table %>%
-      .[,-(10:ncol(.))]
+      .[,-(10:ncol(.))] %>%
+      mutate(Regular_Playoffs = 'Regular')
     playoff_table <- full_table %>%
-      .[, -(4:10)]
-    list(Regular = regularseason_table, Playoffs = playoff_table)
+      .[, -(4:11)] %>%
+      mutate(Regular_Playoffs = 'Playoffs')
+    rbind(regularseason_table, playoff_table)
   }
   
 }
 
+add_missing_season <-function(column) {
+  return <- column
+  for(val in 2:length(return)) {
+    if(return[val] == '') {
+      return[val] <- return[val-1]
+    }
+  }
+  return
+}
+
+exact_age <- function(Years, birthday, rel_date) {
+  Years %>%
+    gsub('-.*', '', .) %>%
+    as.numeric() %>%
+    add(1) %>%
+    paste(rel_date, sep = '/') %>%
+    as.Date('%Y/%m/%d') %>%
+    relative_age(birthday, .)
+}
+
+relative_age <- function(from, to) {
+  from_lt = as.POSIXlt(from)
+  to_lt = as.POSIXlt(to)
+  
+  age <- to_lt$year - from_lt$year
+  age <- ifelse(to_lt$mon < from_lt$mon |
+                  (to_lt$mon == from_lt$mon & to_lt$mday < from_lt$mday),
+                age - 1, age)
+  from_lt$year <- from_lt$year + age[1]
+  middle_age <- from_lt %>%
+    interval(to_lt[1]) %>%
+    as.period('days') %>%
+    .$day %>%
+    divide_by(365)
+  
+  age + middle_age
+}
 
