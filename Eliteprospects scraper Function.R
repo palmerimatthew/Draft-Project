@@ -64,11 +64,93 @@ IndScraper <- function(website, Agerange = c(17, 25), draft.year = T, draft.pick
   
   #Gathering desired information ----
   
-  #getting name
-  Name <- information %>%
-    .[grep('plytitle', .) + 2] %>%
-    trimws()
-  stat_table <- cbind(Name, stat_table)
+  #This is in pounds
+  if(weight) {
+    Weight <- information %>%
+      .[grep('Weight', .) + 2] %>%
+      str_split('/') %>%
+      .[[1]] %>%
+      .[1] %>%
+      gsub('lbs', '', .) %>%
+      as.numeric()
+    stat_table <- cbind(Weight, stat_table)
+  }
+  
+  #This is in centimeters
+  if(height) {
+    Height <- information %>%
+      .[grep('Height', .) + 2] %>%
+      str_split('/') %>%
+      .[[1]] %>%
+      .[2] %>%
+      gsub('cm', '', .) %>%
+      as.numeric()
+    stat_table <- cbind(Height, stat_table)
+  }
+  
+  #Country they would represent in an international country. This can be different from birth place
+  if(country) {
+    Country <- information %>%
+      .[grep('Nation', .) + 2] %>%
+      str_split('<|>') %>%
+      .[[1]] %>%
+      .[3] %>%
+      trimws()
+    stat_table <- cbind(Country, stat_table)
+  }
+  
+  #Birthplace information
+  if(place.birth) {
+    
+    Birth_Place <- information %>%
+      .[grep('Place of Birth', .) + 2] %>%
+      str_split('<|>') %>%
+      extract2(1) %>%
+      .[grep(',', .)] %>%
+      trimws()
+    
+    if(Pbsep) {
+      
+      split_birth <- Birth_Place %>%
+        str_split(', ') %>%
+        extract2(1)
+      
+      Birth_City <- split_birth[1]
+      stat_table <- cbind(Birth_City, stat_table)
+      
+      Birth_State <- ifelse(length(split_birth) == 3, 
+                            split_birth[2], 
+                            NA)
+      stat_table <- cbind(Birth_State, stat_table)
+      
+      Birth_Country <- split_birth %>%
+        .[length(.)]
+      stat_table <- cbind(Birth_Country, stat_table)
+      
+    } else {
+      stat_table <- cbind(Birth_Place, stat_table)
+    }
+  }
+  
+  #Birthdate information and seperation
+  if(dbsep & date.birth) {
+    Birth_Date <- Birth_Date %>%
+      as.character() %>%
+      str_split('-') %>%
+      .[[1]]
+    
+    Birth_Day <- Birth_Date[3]
+    stat_table <- cbind(Birth_Day, stat_table)
+    
+    Birth_Month <- Birth_Date[2]
+    stat_table <- cbind(Birth_Month, stat_table)
+    
+    Birth_Year <- Birth_Date[1]
+    stat_table <- cbind(Birth_Year, stat_table)
+    
+  } else if (date.birth) {
+    stat_table <- cbind(Birth_Date, stat_table)
+  }
   
   #draft pick information
   if(draft.year | draft.pick | round |draft.elig | drafted.team) {
@@ -107,27 +189,6 @@ IndScraper <- function(website, Agerange = c(17, 25), draft.year = T, draft.pick
         str_split(' ') %>%
         extract2(1)
       
-      if (draft.year) {
-        Draft_Year <- draft_statement %>%
-          .[1] %>%
-          as.numeric()
-        stat_table <- cbind(Draft_Year, stat_table)
-      }
-      
-      if (draft.pick) {
-        Draft_Pick <- draft_statement %>%
-          .[4] %>%
-          gsub('#', '', .) %>%
-          as.numeric()
-        stat_table <- cbind(Draft_Pick, stat_table)
-      }
-      
-      if (round) {
-        Round <- draft_statement %>%
-          .[3] %>%
-          as.numeric()
-        stat_table <- cbind(Round, stat_table)
-      }
       #Draft_Elig refers to the number of years a player was draft eligible before they got drafted
       # Currently, if a player is drafted twice, just considers the first time they were drafted
       if (draft.elig) {
@@ -136,8 +197,8 @@ IndScraper <- function(website, Agerange = c(17, 25), draft.year = T, draft.pick
                                as.numeric() %>%
                                add(1)),
                  age_at_draft = exact_age(Season, Birth_Date, "9/15")) %>% #need age as of 9/15, as that is 
-                                                                           # the date that decides draft
-                                                                           # eligibility
+          # the date that decides draft
+          # eligibility
           filter(end_year == Draft_Year) %$%
           age_at_draft %>%
           unique() %>%
@@ -145,6 +206,28 @@ IndScraper <- function(website, Agerange = c(17, 25), draft.year = T, draft.pick
           floor() %>%
           subtract(17)
         stat_table <- cbind(Draft_Elig, stat_table)
+      }
+      
+      if (draft.year) {
+        Draft_Year <- draft_statement %>%
+          .[1] %>%
+          as.numeric()
+        stat_table <- cbind(Draft_Year, stat_table)
+      }
+      
+      if (round) {
+        Round <- draft_statement %>%
+          .[3] %>%
+          as.numeric()
+        stat_table <- cbind(Round, stat_table)
+      }
+      
+      if (draft.pick) {
+        Draft_Pick <- draft_statement %>%
+          .[4] %>%
+          gsub('#', '', .) %>%
+          as.numeric()
+        stat_table <- cbind(Draft_Pick, stat_table)
       }
       
       if (drafted.team) {
@@ -194,96 +277,11 @@ IndScraper <- function(website, Agerange = c(17, 25), draft.year = T, draft.pick
     stat_table <- cbind(Position, stat_table)
   }
   
-  #Birthplace information
-  if(place.birth) {
-    
-    Birth_Place <- information %>%
-      .[grep('Place of Birth', .) + 2] %>%
-      str_split('<|>') %>%
-      extract2(1) %>%
-      .[grep(',', .)] %>%
-      trimws()
-    
-    if(Pbsep) {
-      
-      split_birth <- Birth_Place %>%
-        str_split(', ') %>%
-        extract2(1)
-      
-      Birth_City <- split_birth[1]
-      stat_table <- cbind(Birth_City, stat_table)
-      
-      Birth_State <- ifelse(length(split_birth) == 3, 
-                            split_birth[2], 
-                            NA)
-      stat_table <- cbind(Birth_State, stat_table)
-      
-      Birth_Country <- split_birth %>%
-        .[length(.)]
-      stat_table <- cbind(Birth_Country, stat_table)
-      
-    } else {
-      stat_table <- cbind(Birth_Place, stat_table)
-    }
-  }
-  
-  if(dbsep & date.birth) {
-    Birth_Date <- Birth_Date %>%
-      as.character() %>%
-      str_split('-') %>%
-      .[[1]]
-    
-    Birth_Year <- Birth_Date[1]
-    stat_table <- cbind(Birth_Year, stat_table)
-    
-    Birth_Month <- Birth_Date[2]
-    stat_table <- cbind(Birth_Month, stat_table)
-    
-    Birth_Day <- Birth_Date[3]
-    stat_table <- cbind(Birth_Day, stat_table)
-  } else if (date.birth) {
-    stat_table <- cbind(Birth_Date, stat_table)
-  }
-  
-  #Country they would represent in an international country. This can be different from birth place
-  if(country) {
-    Country <- information %>%
-      .[grep('Nation', .) + 2] %>%
-      str_split('<|>') %>%
-      .[[1]] %>%
-      .[3] %>%
-      trimws()
-    
-    stat_table <- cbind(Country, stat_table)
-  }
-  
-  #This is in centimeters
-  if(height) {
-    Height <- information %>%
-      .[grep('Height', .) + 2] %>%
-      str_split('/') %>%
-      .[[1]] %>%
-      .[2] %>%
-      gsub('cm', '', .) %>%
-      as.numeric()
-    
-    stat_table <- cbind(Height, stat_table)
-  }
-  
-  #This is in pounds
-  if(weight) {
-    Weight <- information %>%
-      .[grep('Weight', .) + 2] %>%
-      str_split('/') %>%
-      .[[1]] %>%
-      .[1] %>%
-      gsub('lbs', '', .) %>%
-      as.numeric()
-    
-    stat_table <- cbind(Weight, stat_table)
-  }
-  
-  #Adding information to stats table
+  #getting name
+  Name <- information %>%
+    .[grep('plytitle', .) + 2] %>%
+    trimws()
+  stat_table <- cbind(Name, stat_table)
   
 }
 
