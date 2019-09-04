@@ -223,7 +223,16 @@ IndScraper <- function(website, Agerange = c(17, 25), draft.year = T, draft.pick
       as.numeric()
   }
   
-  
+  #This is in pounds
+  if(weight) {
+    Weight <- information %>%
+      .[grep('Weight', .) + 2] %>%
+      str_split('/') %>%
+      .[[1]] %>%
+      .[1] %>%
+      gsub('lbs', '', .) %>%
+      as.numeric()
+  }
 }
 
 get_EP_Information <- function(html) {
