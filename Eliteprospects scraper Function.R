@@ -103,9 +103,22 @@ IndScraper <- function(website, Agerange = c(17, 25), draft.year = T, draft.pick
           .[3] %>%
           as.numeric()
       }
-      #Figure out how I want to do this
+      #Draft_Elig refers to the number of years a player was draft eligible before they got drafted
+      # Currently, if a player is drafted twice, just considers the first time they were drafted
       if (draft.elig) {
-        
+        Draft_Elig <- stat_table %>%
+          mutate(end_year = ((gsub('-(.*)', '', Season)) %>%
+                               as.numeric() %>%
+                               add(1)),
+                 age_at_draft = exact_age(Season, Birth_Date, "9/15")) %>% #need age as of 9/15, as that is 
+                                                                           # the date that decides draft
+                                                                           # eligibility
+          filter(end_year == Draft_Year) %$%
+          age_at_draft %>%
+          unique() %>%
+          .[1] %>% #Get age at draft
+          floor() %>%
+          subtract(17)
       }
       
       if (drafted.team) {
@@ -132,6 +145,7 @@ IndScraper <- function(website, Agerange = c(17, 25), draft.year = T, draft.pick
     Position <- information %>%
       .[grep('Position', .) + 2] %>%
       trimws()
+    
     #Add shooting side for defensemen
   }
   
