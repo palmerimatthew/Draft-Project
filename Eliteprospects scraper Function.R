@@ -58,8 +58,9 @@ IndScraper <- function(website, Agerange = c(17, 25), draft.year = T, draft.pick
   
   stat_table <- get_EP_table(html, reg.playoffs) %>% #Getting stats table
     mutate(Season = add_missing_season(as.character(S)), #filling in missing season data
-           Age = exact_age(Season, Birth_Date, Agerel)) %>% #Adding age to table
-    select(Season, Age, Team:`+/-`)
+           Age = exact_age(Season, Birth_Date, Agerel),
+           age_at_draft = exact_age(Season, Birth_Date, "9/15")) %>% #Adding age to table
+    select(Season, Age, age_at_draft, Team:`+/-`)
   
   
   #Gathering desired information ----
@@ -189,30 +190,16 @@ IndScraper <- function(website, Agerange = c(17, 25), draft.year = T, draft.pick
         str_split(' ') %>%
         extract2(1)
       
-      #Draft_Elig refers to the number of years a player was draft eligible before they got drafted
-      # Currently, if a player is drafted twice, just considers the first time they were drafted
-      if (draft.elig) {
-        Draft_Elig <- stat_table %>%
-          mutate(end_year = ((gsub('-(.*)', '', Season)) %>%
-                               as.numeric() %>%
-                               add(1)),
-                 age_at_draft = exact_age(Season, Birth_Date, "9/15")) %>% #need age as of 9/15, as that is 
-          # the date that decides draft
-          # eligibility
-          filter(end_year == Draft_Year) %$%
-          age_at_draft %>%
-          unique() %>%
-          .[1] %>% #Get age at draft
-          floor() %>%
-          subtract(17)
-        stat_table <- cbind(Draft_Elig, stat_table)
-      }
+      Draft_Year <- draft_statement %>%
+        .[1] %>%
+        as.numeric()
       
-      if (draft.year) {
-        Draft_Year <- draft_statement %>%
-          .[1] %>%
+      if (draft.pick) {
+        Draft_Pick <- draft_statement %>%
+          .[4] %>%
+          gsub('#', '', .) %>%
           as.numeric()
-        stat_table <- cbind(Draft_Year, stat_table)
+        stat_table <- cbind(Draft_Pick, stat_table)
       }
       
       if (round) {
@@ -222,12 +209,24 @@ IndScraper <- function(website, Agerange = c(17, 25), draft.year = T, draft.pick
         stat_table <- cbind(Round, stat_table)
       }
       
-      if (draft.pick) {
-        Draft_Pick <- draft_statement %>%
-          .[4] %>%
-          gsub('#', '', .) %>%
-          as.numeric()
-        stat_table <- cbind(Draft_Pick, stat_table)
+      if (draft.year) {
+        stat_table <- cbind(Draft_Year, stat_table)
+      }
+      
+      #Draft_Elig refers to the number of years a player was draft eligible before they got drafted
+      # Currently, if a player is drafted twice, just considers the first time they were drafted
+      if (draft.elig) {
+        Draft_Elig <- stat_table %>%
+          mutate(end_year = ((gsub('-(.*)', '', Season)) %>%
+                               as.numeric() %>%
+                               add(1))) %>%
+          filter(end_year == Draft_Year) %$%
+          age_at_draft %>%
+          unique() %>%
+          .[1] %>% #Get age at draft
+          floor() %>%
+          subtract(17)
+        stat_table <- cbind(Draft_Elig, stat_table)
       }
       
       if (drafted.team) {
@@ -281,7 +280,12 @@ IndScraper <- function(website, Agerange = c(17, 25), draft.year = T, draft.pick
   Name <- information %>%
     .[grep('plytitle', .) + 2] %>%
     trimws()
-  stat_table <- cbind(Name, stat_table)
+  
+  #returning table
+  stat_table <- cbind(Name, stat_table) %>%
+    select(-age_at_draft)
+  
+  stat_table
   
 }
 
