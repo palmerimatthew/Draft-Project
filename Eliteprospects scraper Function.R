@@ -211,6 +211,19 @@ IndScraper <- function(website, Agerange = c(17, 25), draft.year = T, draft.pick
       .[3] %>%
       trimws()
   }
+  
+  #This is in centimeters
+  if(height) {
+    Height <- information %>%
+      .[grep('Height', .) + 2] %>%
+      str_split('/') %>%
+      .[[1]] %>%
+      .[2] %>%
+      gsub('cm', '', .) %>%
+      as.numeric()
+  }
+  
+  
 }
 
 get_EP_Information <- function(html) {
