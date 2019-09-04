@@ -302,34 +302,6 @@ removeDuplicateYears <- function(Table, boolean) {
   Table[!duplicate,]
 }
 
-tableEquals <- function(table1, table2) {
-  if(ncol(table1) != ncol(table2) || nrow(table1) != nrow(table2)) {
-    return(FALSE)
-  }
-  i = 1
-  while(i <= nrow(table1)) {
-    j = 1
-    while(j <= ncol(table1)) {
-      if(is.na(table1[i,j]) && !is.na(table2[i,j])) {
-        if (table2[i,j] != "") {
-          return(FALSE)
-        }
-      } else if(!is.na(table1[i,j]) && is.na(table2[i,j])) {
-        if (table1[i,j] != "") {
-          return(FALSE)
-        }
-      } else if(!is.na(table1[i,j]) && !is.na(table2[i,j])) {
-        if(table1[i,j] != table2[i,j]) {
-          return(FALSE)
-        }
-      }
-      j <- j + 1
-    }
-    i <- i + 1
-  }
-  TRUE
-}
-
 mergeTableHockeyRef <- function(Table1, Table2, boolean) {
   Table1 <- unite(Table1, Age, Tm, col = "forSort", sep = "-")
   try(Table2 <- unite(Table2, Age, Tm, col = "forSort", sep = "-"), silent = T)
