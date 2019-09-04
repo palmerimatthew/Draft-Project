@@ -36,7 +36,7 @@ draftScraper <- function(Data, Agerange = c(17, 25), draft.year = T, draft.pick 
 IndScraper <- function(website, Agerange = c(17, 25), draft.year = T, draft.pick = T, round = T, 
                        draft.elig = T, Agerel = "9/15", position = T, shoots = T, 
                        Stats = c("S", "Team", "League", "GP", "G", "A", "TP", "PIM", "+/-"),
-                       place.birth = T, Pbsep = T, Country = T, Height = T, Weight = T, date.birth = T, 
+                       place.birth = T, Pbsep = T, country = T, height = T, weight = T, date.birth = T, 
                        dbsep = T, drafted.team = T, reg.playoffs = 'R') {
   
   #Preliminary tables and configuring information ----
@@ -130,23 +130,36 @@ IndScraper <- function(website, Agerange = c(17, 25), draft.year = T, draft.pick
   }
   
   #Shoot and Position information
-  if(shoots) {
-    
-    Shoots <- information %>%
-      .[grep('Shoots', .) + 1] %>%
-      str_split('<|>') %>%
-      extract2(1) %>%
-      .[length(.) - 2] %>%
-      trimws()
-    
-  }
+  Shoots <- information %>%
+    .[grep('Shoots', .) + 1] %>%
+    str_split('<|>') %>%
+    extract2(1) %>%
+    .[length(.) - 2] %>%
+    trimws()
   if(position) {
     
     Position <- information %>%
       .[grep('Position', .) + 2] %>%
       trimws()
     
-    #Add shooting side for defensemen
+    #If a player has a position like LW/D, we want to preserve order (so this becomes LW/LD)
+    if(grepl('D', Position)) {
+      #split position based on /
+      temp <- Position %>%
+        str_split('/') %>%
+        .[[1]]
+      #which entry has D
+      num <- temp %>%
+        grep('D', .) %>%
+        as.numeric()
+      #change this entry to include shooting side
+      temp[num] <- paste0(Shoots, 'D')
+      Position <- temp %>%
+        paste(collapse = '/')
+      #removing temporary variables
+      rm(num)
+      rm(temp)
+    }
   }
   
   #Birthplace information
@@ -167,14 +180,37 @@ IndScraper <- function(website, Agerange = c(17, 25), draft.year = T, draft.pick
       
       Birth_City <- split_birth[1]
       
-      Birth_State <- ifelse(length(split_birth) == 3, split_birth[2], NA)
+      Birth_State <- ifelse(length(split_birth) == 3, 
+                            split_birth[2], 
+                            NA)
       
       Birth_Country <- split_birth %>%
         .[length(.)]
     }
   }
   
+  if(dbsep) {
+    Birth_Date <- Birth_Date %>%
+      as.character() %>%
+      str_split('-') %>%
+      .[[1]]
+    
+    Birth_Year <- Birth_Date[1]
+    
+    Birth_Month <- Birth_Date[2]
+    
+    Birth_Day <- Birth_Date[3]
+  }
   
+  #Country they would represent in an international country. This can be different from birth place
+  if(country) {
+    Country <- information %>%
+      .[grep('Nation', .) + 2] %>%
+      str_split('<|>') %>%
+      .[[1]] %>%
+      .[3] %>%
+      trimws()
+  }
 }
 
 get_EP_Information <- function(html) {
