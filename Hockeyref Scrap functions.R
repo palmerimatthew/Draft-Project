@@ -1,9 +1,9 @@
 library(rvest)
 library(XML)
 library(stringr)
-library(tidyr)
+library(tidyverse)
 
-#stats codebook
+#skater stats codebook
 ###all = all available stats
 ###stateSep = seperate goals, assists, and points based on strength (PP, SH, EV)
 ###Cor = Corsi
@@ -16,56 +16,31 @@ library(tidyr)
 ###PS = HockeyRef's point shares metric
 ###xGF = expected Goals For percentage 
 
+
+#goalie stats codebook
+###QS - quality starts metric
+###GSAA - goals saved above average
+###Scoring - goals/assists/points/etc.
+###Awards - Awards with placement
+
+
 #Season codebook
 ###R = Regular season
 ###P = Playoffs
 ###RP = Regular season and playoffs (in seperate tables)
 
-RefDraftScraper <- function(website, ages = c(17, 50), playerStats = "all", goalieStats = "all", Season = "R") {
-  Parse <- read_html(website)
-  Nodes <- html_nodes(Parse, "table")
-  #Getting table of drafted players
-  draftTable <- html_table(Nodes, header = TRUE, fill = TRUE)[[1]]
-  colnames(draftTable) <- draftTable[1,]
+Ref_Draft_Scraper <- function(website, ages = c(17, 50), playerStats = "all", goalieStats = "all", Season = "R") {
+  links <- website %>%
+    readLines() %>%
+    paste(collapse = '\n') %>%
+    str_match_all("<a href=\"(.*?)\"") %>% #just grabbing hyperlinks in the html
+    .[[1]] %>%
+    .[,2] %>%
+    .[grep('/players/.', .)] %>% #only want the hyperlinks that link to players
+    paste0('https://www.hockey-reference.com', .)
   
-  #Removing any non-player rows
-  draftTable[,1] <- as.numeric(draftTable[,1])
-  naTest <- is.na(draftTable[,1])
-  draftTable <- draftTable[!naTest,]
+  returnTable <- Player_Wrapper(links, ages, playerStats, goalieStats, Season)
   
-  #Goalie index to seperate players and goalies
-  goalieIndex <- grep("G", draftTable$Pos)
-  
-  #Getting player links
-  html <- paste(readLines(website), collapse="\n")
-  matched <- str_match_all(html, "<a href=\"(.*?)\"")
-  links <- matched[[1]][,2]
-  Links <- grep("/players/", links)
-  Links <- links[Links[1:nrow(draftTable)]]
-  Links <- paste("https://www.hockey-reference.com", Links, sep = "")
-  
-  draftPlayerTable <- draftTable[-goalieIndex,]
-  draftGoalieTable <- draftTable[goalieIndex,]
-  playerLinks <- Links[-goalieIndex]
-  goalieLinks <- Links[goalieIndex]
-  
-  returnTable <- list(Player = RefPlayerScraper(playerLinks[1], ages, playerStats, Season),
-                      Goalie = RefGoalieScraper(goalieLinks[1], ages, goalieStats, Season))
-  playerLinks <- playerLinks[-1]
-  if (Season == "R" | Season == "P") {
-    #Single table returned
-    for(player in playerLinks) {
-      playerTable <- RefPlayerScraper(player, ages, playerStats, Season)
-      returnTable$Player <- rbind(returnTable$Player, playerTable)
-    }
-  } else {
-    #Multiple tables returned
-    for(player in playerLinks) {
-      playerTable <- RefPlayerScraper(player, ages, playerStats, Season)
-      returnTable$Player$Regular <- rbind(returnTable$Regular, playerTable$Regular)
-      returnTable$Player$Playoff <- rbind(returnTable$Playoff, playerTable$Playoff)
-    } #for
-  } #if/else (Season == "R" | Season == "P")
   returnTable
 }
 
@@ -117,6 +92,7 @@ RefPlayerScraper <- function(website, ages = c(17,50), Stats = "all", Season = "
         generalStats <- generalStats[,-(index:(index + 1))]
       }
       generalStats <- removeDuplicateYears(generalStats, sepTeam)
+      
       #Based on Corsi, Fenwick, or PDO inclusion in 'Stats'
       if("Cor" %in% Stats || "Fen" %in% Stats || "PDO" %in% Stats || "oiS" %in% Stats) {
         possessionTable <- grep("skaters_advanced", namesList)
@@ -148,8 +124,8 @@ RefPlayerScraper <- function(website, ages = c(17,50), Stats = "all", Season = "
             possessionTable <- possessionTable[,-(index:(index + 3))]
           }
           possessionTable <- removeDuplicateYears(possessionTable, sepTeam)
-          possessionTable <- possessionTable[, -(2:6)]
-          generalStats <- merge(x = generalStats, y = possessionTable, by = "Season", all.x = T)
+          possessionTable <- possessionTable[, -c(1,4:6)]
+          generalStats <- mergeTableHockeyRef(generalStats, possessionTable, sepTeam)
         }
       }
       
@@ -187,11 +163,12 @@ RefPlayerScraper <- function(website, ages = c(17,50), Stats = "all", Season = "
         ####################################
         #want to fix this to be more generic
         ####################################
-        miscTable <- miscTable[,-(2:16)]
-        generalStats <- merge(x = generalStats, y = miscTable, by = "Season", all.x = T)
+        miscTable <- miscTable[,-c(1,4:16)]
+        generalStats <- mergeTableHockeyRef(generalStats, miscTable, sepTeam)
       }
       #Constricting table to age limit
-      generalStats$Age <- as.numeric(levels(generalStats$Age))[generalStats$Age]
+      generalStats$Age <- as.numeric(generalStats$Age)
+      generalStats <- generalStats[,c(3,1,2,4:(ncol(generalStats)))]
       generalStats <- generalStats[generalStats$Age >= ages[1],]
       generalStats <- generalStats[generalStats$Age <= ages[2],]
     }
@@ -209,7 +186,7 @@ RefPlayerScraper <- function(website, ages = c(17,50), Stats = "all", Season = "
 
 RefGoalieScraper <- function(website, ages = c(17,50), Stats, Season = "R", sepTeam = F) {
   if (Stats == "all") {
-    Stats = c("GA%", "GAA", "QS", "GSAA", "Scoring", "Awards")
+    Stats = c("QS", "GSAA", "Scoring", "Awards")
   }
   tables <- getHockeyRefTables(website)
   namesList <- names(tables)
@@ -309,31 +286,55 @@ getHockeyRefTables <- function(website) {
 }
 
 removeDuplicateYears <- function(Table, boolean) {
+  duplicate <- duplicated(Table$Age)
   if (boolean) {
-    
-  } else {
-    duplicate <- duplicated(Table$Age)
-    Table[!duplicate,]
-  }
-}
-
-tableEquals <- function(table1, table2) {
-  if(ncol(table1) == ncol(table2) && nrow(table1) == nrow(table2)) {
     i = 1
-    while(i <= nrow(table1)) {
-      j = 1
-      while(j <= ncol(table1)) {
-        if((is.na(table1[i,j]) && !is.na(table2[i,j]) || (!is.na(table1[i,j])) && is.na(table2[i,j]))) {
-          FALSE
-        } else if(!is.na(table1[i,j]) && !is.na(table2[i,j])) {
-          if(table1[i,j] != table2[i,j]) {
-            FALSE
-          }
-        }
-        j <- j + 1
+    while(i < length(duplicate)) {
+      if(!duplicate[i] && duplicate[i+1]) {
+        duplicate[i] = T
+      } else {
+        duplicate[i] = F
       }
       i <- i + 1
     }
+    duplicate[i] = F
+  }
+  Table[!duplicate,]
+}
+
+tableEquals <- function(table1, table2) {
+  if(ncol(table1) != ncol(table2) || nrow(table1) != nrow(table2)) {
+    return(FALSE)
+  }
+  i = 1
+  while(i <= nrow(table1)) {
+    j = 1
+    while(j <= ncol(table1)) {
+      if(is.na(table1[i,j]) && !is.na(table2[i,j])) {
+        if (table2[i,j] != "") {
+          return(FALSE)
+        }
+      } else if(!is.na(table1[i,j]) && is.na(table2[i,j])) {
+        if (table1[i,j] != "") {
+          return(FALSE)
+        }
+      } else if(!is.na(table1[i,j]) && !is.na(table2[i,j])) {
+        if(table1[i,j] != table2[i,j]) {
+          return(FALSE)
+        }
+      }
+      j <- j + 1
+    }
+    i <- i + 1
   }
   TRUE
 }
+
+mergeTableHockeyRef <- function(Table1, Table2, boolean) {
+  Table1 <- unite(Table1, Age, Tm, col = "forSort", sep = "-")
+  try(Table2 <- unite(Table2, Age, Tm, col = "forSort", sep = "-"), silent = T)
+  try(Table2 <- unite(Table2, Age, Team, col = "forSort", sep = "-"), silent = T)
+  returnTable <- merge(x = Table1, y = Table2, by = "forSort", all.x = T)
+  separate(returnTable, forSort, into = c("Age", "Tm"), sep = "-")
+}
+
