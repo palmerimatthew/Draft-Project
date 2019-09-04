@@ -4,7 +4,7 @@ require(tidyverse)
 require(XML)
 require(lubridate)
 
-draftScraper <- function(Data, Agerange = c(17, 25), draft.year = T, draft.pick = T, round = T, 
+draft_Scraper <- function(Data, Agerange = c(17, 25), draft.year = T, draft.pick = T, round = T, 
                          draft.elig = T, Agerel = "9/15", Goalie = F, position = T, shoots = T, 
                          Stats = c("S", "Team", "League", "GP", "G", "A", "TP", "PIM", "+/-", "sv%", "GAA"),
                          place.birth = T, Pbsep = T, Country = T, Height = T, Weight = T, date.birth = T, 
@@ -19,22 +19,33 @@ draftScraper <- function(Data, Agerange = c(17, 25), draft.year = T, draft.pick 
     html_table(header = T, fill = T) %>%
     extract2(2) %>%
     filter(!Team %in% paste('ROUND', c(1,2,3,4,5,6,7,8,9))) %>%
-    separate(Player, c('Name', 'Position'), '\\(') %>%
-    use_series(Position) %>%
+    separate(Player, c('Name', 'Position'), '\\(') %$%
+    Position %>%
     substr(1,1) %>%
     grep("G", .)
   player_links <- links[-goalie_spots]
   if (Goalie) {
     goalie_links <- links[goalie_spots]
   }
-  player_template <- indScraper(playerLinks[1], Agerange, draft.year, draft.pick, round, draft.elig, Agerel, position, 
+  player_template <- Ind_Scraper(player_links[1], Agerange, draft.year, draft.pick, round, draft.elig, Agerel, position, 
                                 shoots, Stats, place.birth, Pbsep, Country, Height, Weight, date.birth, dbsep, drafted.team, reg.playoffs)
   
+  player_data <- player_template %>%
+    filter(Season == 'F')
+  
+  for(link in player_links) {
+    temp <- Ind_Scraper(link, Agerange, draft.year, draft.pick, round, draft.elig, Agerel, position, 
+                shoots, Stats, place.birth, Pbsep, Country, Height, Weight, date.birth, dbsep, drafted.team, reg.playoffs)
+    player_data <- player_data %>%
+      rbind(temp)
+  }
+  
+  player_data
   
 }
 
 
-IndScraper <- function(website, Agerange = c(17, 25), draft.year = T, draft.pick = T, round = T, 
+Ind_Scraper <- function(website, Agerange = c(17, 25), draft.year = T, draft.pick = T, round = T, 
                        draft.elig = T, Agerel = "9/15", position = T, shoots = T, 
                        Stats = c("S", "Team", "League", "GP", "G", "A", "TP", "PIM", "+/-"),
                        place.birth = T, Pbsep = T, country = T, height = T, weight = T, date.birth = T, 
@@ -283,10 +294,10 @@ IndScraper <- function(website, Agerange = c(17, 25), draft.year = T, draft.pick
   
   #returning table
   stat_table <- cbind(Name, stat_table) %>%
-    select(-age_at_draft)
+    select(-age_at_draft) %>%
+    filter(Age >= Agerange[1] & Age <= Agerange[2])
   
   stat_table
-  
 }
 
 get_EP_Information <- function(html) {
