@@ -2,8 +2,9 @@ require(rvest)
 require(stringr)
 require(tidyverse)
 require(XML)
+require(lubridate)
 
-draftScraper <- function(Data, draft = T, Agerange = c(17, 25), draft.year = T, draft.pick = T, round = T, 
+draftScraper <- function(Data, Agerange = c(17, 25), draft.year = T, draft.pick = T, round = T, 
                          draft.elig = T, Agerel = "9/15", Goalie = F, position = T, shoots = T, 
                          Stats = c("S", "Team", "League", "GP", "G", "A", "TP", "PIM", "+/-", "sv%", "GAA"),
                          place.birth = T, Pbsep = T, Country = T, Height = T, Weight = T, date.birth = T, 
@@ -49,15 +50,15 @@ IndScraper <- function(website, Agerange = c(17, 25), draft.year = T, draft.pick
   Birth_Date <- information %>%
     .[grep('Date of Birth', .) + 2] %>%
     str_split('<|>') %>%
-    extract2(1) %>%
+    .[[1]] %>%
     .[3] %>%
     trimws() %>%
     mdy()
   
-  stat_table <- get_EP_table(html, reg.playoffs) #Getting stats table
-  mutate(Season = add_missing_season(as.character(S)), #filling in missing season data
-         Age = exact_age(Season, Birth_Date, Agerel)) #Adding age to table
-  
+  stat_table <- get_EP_table(html, reg.playoffs) %>% #Getting stats table
+    mutate(Season = add_missing_season(as.character(S)), #filling in missing season data
+           Age = exact_age(Season, Birth_Date, Agerel)) %>% #Adding age to table
+    select(Season, Age, Team:`+/-`)
   
   
   #Gathering desired information ----
@@ -68,7 +69,7 @@ IndScraper <- function(website, Agerange = c(17, 25), draft.year = T, draft.pick
     if(length(grep('Drafted', information)) == 0) {
       
       if (draft.year) {Draft_Year <- NA}
-      if (draft.pick) {SDraft_Pick <- NA}
+      if (draft.pick) {Draft_Pick <- NA}
       if (round) {Round <- NA}
       if (draft.elig) {Draft_Elig <- NA}
       if (drafted.team) {Drafted_Team <- NA}
@@ -76,7 +77,7 @@ IndScraper <- function(website, Agerange = c(17, 25), draft.year = T, draft.pick
     } else {
       
       draft_statement <- information %>%
-        .[grep('Drafted', .)+1] %>%
+        .[grep('Drafted', .)[length(grep('Drafted', .))]+1] %>%
         str_split('>|<') %>%
         extract2(1) %>%
         .[grep('#', .)] %>%
@@ -194,7 +195,7 @@ get_EP_table <- function(html, Season) {
     .[right_start:right_end] %>%
     paste(collapse = '\n') %>%
     readHTMLTable() %>%
-    extract2(1)
+    .[[1]]
   
   if (Season == 'R') {
     full_table %>%
