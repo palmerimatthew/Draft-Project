@@ -3,6 +3,7 @@ require(stringr)
 require(tidyverse)
 require(XML)
 require(lubridate)
+require(magrittr)
 
 draft_Scraper <- function(Data, Agerange = c(17, 25), draft.year = T, draft.pick = T, round = T, 
                          draft.elig = T, Agerel = "9/15", Goalie = F, position = T, shoots = T, 
@@ -289,7 +290,8 @@ Ind_Scraper <- function(website, Agerange = c(17, 25), draft.year = T, draft.pic
   
   #getting name
   Name <- information %>%
-    .[grep('plytitle', .) + 2] %>%
+    .[(grep('plytitle', .)+1):(grep('plytitle', .) + 3)] %>%
+    .[!grepl('<i', .)] %>%
     trimws()
   
   #returning table
