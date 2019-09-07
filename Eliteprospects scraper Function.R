@@ -19,8 +19,8 @@ draft_Scraper <- function(Data, Agerange = c(17, 25), draft.year = T, draft.pick
     html_nodes("table") %>%
     html_table(header = T, fill = T) %>%
     extract2(2) %>%
-    filter(!Team %in% paste('ROUND', c(1,2,3,4,5,6,7,8,9))) %>%
-    separate(Player, c('Name', 'Position'), '\\(') %$%
+    filter(!Team %in% paste('ROUND', c(1,2,3,4,5,6,7,8,9,10,11,12,13,14,15))) %>%
+    separate(Player, c('Name', 'Position'), '\\(', fill = 'right') %$%
     Position %>%
     substr(1,1) %>%
     grep("G", .)
@@ -140,11 +140,12 @@ NHL_boolean <- function(website) {
 }
 
 Ind_Scraper <- function(website, Agerange = c(17, 25), draft.year = T, draft.pick = T, round = T, 
-                       draft.elig = T, Agerel = "9/15", position = T, shoots = T, 
-                       Stats = c("S", "Team", "League", "GP", "G", "A", "TP", "PIM", "+/-"),
-                       place.birth = T, Pbsep = T, country = T, height = T, weight = T, date.birth = T, 
-                       dbsep = T, drafted.team = T, reg.playoffs = 'R') {
+                        draft.elig = T, Agerel = "9/15", position = T, shoots = T, 
+                        Stats = c("S", "Team", "League", "GP", "G", "A", "TP", "PIM", "+/-"),
+                        place.birth = T, Pbsep = T, country = T, height = T, weight = T, date.birth = T, 
+                        dbsep = T, drafted.team = T, reg.playoffs = 'R') {
   print(website)
+  control <- T
   #Preliminary tables and configuring information ----
   html <- website %>%
     readLines()
@@ -158,240 +159,277 @@ Ind_Scraper <- function(website, Agerange = c(17, 25), draft.year = T, draft.pic
     str_split('<|>') %>%
     .[[1]] %>%
     .[3] %>%
-    trimws() %>%
-    mdy()
+    trimws()
+  if(!grepl(',', Birth_Date)) {
+    control <- F
+  } else {
+    Birth_Date <- mdy(Birth_Date)
+  }
   
-  stat_table <- get_EP_table(html, reg.playoffs) %>% #Getting stats table
-    mutate(Season = add_missing_season(as.character(S)), #filling in missing season data
-           Age = exact_age(Season, Birth_Date, Agerel),
-           age_at_draft = exact_age(Season, Birth_Date, "9/15")) %>% #Adding age to table
-    select(Season, Age, age_at_draft, Team:`+/-`)
+  stat_table <- get_EP_table(html, reg.playoffs) #Getting stats table
   
-  
+  if (length(stat_table) == 0 | !control) {
+    control <- F
+  } else {
+    stat_table <- stat_table %>%
+      mutate(Season = add_missing_season(as.character(S)), #filling in missing season data
+             Age = exact_age(Season, Birth_Date, Agerel),
+             age_at_draft = exact_age(Season, Birth_Date, "9/15")) %>% #Adding age to table
+      select(Season, Age, age_at_draft, Team:`+/-`) %>%
+      filter(Age >= Agerange[1] & Age <= Agerange[2])
+  }
+  if (control) {
+    if(nrow(stat_table) == 0) {
+      control <- F
+    }
+  }
   #Gathering desired information ----
   
-  #This is in pounds
-  if(weight) {
-    Weight <- information %>%
-      .[grep('Weight', .) + 2] %>%
-      str_split('/') %>%
-      .[[1]] %>%
-      .[1] %>%
-      gsub('lbs', '', .) %>%
-      as.numeric()
-    stat_table <- cbind(Weight, stat_table)
-  }
-  
-  #This is in centimeters
-  if(height) {
-    Height <- information %>%
-      .[grep('Height', .) + 2] %>%
-      str_split('/') %>%
-      .[[1]] %>%
-      .[2] %>%
-      gsub('cm', '', .) %>%
-      as.numeric()
-    stat_table <- cbind(Height, stat_table)
-  }
-  
-  #Country they would represent in an international country. This can be different from birth place
-  if(country) {
-    Country <- information %>%
-      .[grep('Nation', .) + 2] %>%
-      str_split('<|>') %>%
-      .[[1]] %>%
-      .[3] %>%
-      trimws()
-    stat_table <- cbind(Country, stat_table)
-  }
-  
-  #Birthplace information
-  if(place.birth) {
-    Birth_Place <- information %>%
-      .[grep('Place of Birth', .) + 2] %>%
+  if(control){
+    #This is in pounds
+    if(weight) {
+      Weight <- information %>%
+        .[grep('Weight', .) + 2] %>%
+        str_split('/') %>%
+        .[[1]] %>%
+        .[1] %>%
+        gsub('lbs', '', .) %>%
+        trimws()
+      if(Weight == '-') {
+        Weight <- NA
+      } else {
+        Weight <- as.numeric(Weight)
+      }
+      stat_table <- cbind(Weight, stat_table)
+    }
+    
+    #This is in centimeters
+    if(height) {
+      Height <- information %>%
+        .[grep('Height', .)[length(grep('Height', .))] + 2] %>%
+        str_split('/') %>%
+        .[[1]] %>%
+        trimws()
+      if(Height[1] == '-') {
+        Height <- NA
+      } else {
+        Height <- Height %>%
+          .[2] %>%
+          gsub('cm', '', .) %>%
+          as.numeric()
+      }
+      stat_table <- cbind(Height, stat_table)
+    }
+    
+    #Country they would represent in an international country. This can be different from birth place
+    if(country) {
+      Country <- information %>%
+        .[grep('Nation', .) + 2] %>%
+        str_split('<|>') %>%
+        .[[1]] %>%
+        .[3] %>%
+        trimws()
+      stat_table <- cbind(Country, stat_table)
+    }
+    
+    #Birthplace information
+    if(place.birth) {
+      Birth_Place <- information %>%
+        .[grep('Place of Birth', .) + 2] %>%
+        str_split('<|>') %>%
+        extract2(1) %>%
+        .[grep(',', .)] %>%
+        trimws() %>%
+        gsub('&#039;', '\'', .)
+      
+      if(identical(Birth_Place, character(0))) {
+        Birth_Place <- NA
+      }
+      
+      if(Pbsep) {
+        if(identical(Birth_Place, character(0))) {
+          Birth_City <- NA
+          stat_table <- cbind(Birth_City, stat_table)
+          Birth_State <- NA
+          stat_table <- cbind(Birth_State, stat_table)
+          Birth_Country <- NA
+          stat_table <- cbind(Birth_Country, stat_table)
+        } else {
+          split_birth <- Birth_Place %>%
+            str_split(', ') %>%
+            extract2(1)
+          
+          if(length(split_birth) == 2) {
+            Birth_Country <- split_birth[2]
+            if(str_length(split_birth[1]) == 2 & split_birth[1] == toupper(split_birth[1])) {
+              Birth_State <- split_birth[1]
+              Birth_City <- NA
+            } else {
+              Birth_State <- NA
+              Birth_City <- split_birth[1]
+            }
+          } else {
+            Birth_City <- split_birth[1]
+            Birth_State <- split_birth[2]
+            Birth_Country <- split_birth[3]
+          }
+          
+          stat_table <- cbind(Birth_City, stat_table)
+          stat_table <- cbind(Birth_State, stat_table)
+          stat_table <- cbind(Birth_Country, stat_table)
+        }
+      } else {
+        stat_table <- cbind(Birth_Place, stat_table)
+      }
+    }
+    
+    #Birthdate information and seperation
+    if(dbsep & date.birth) {
+      Birth_Date <- Birth_Date %>%
+        as.character() %>%
+        str_split('-') %>%
+        .[[1]]
+      
+      Birth_Day <- Birth_Date[3]
+      stat_table <- cbind(Birth_Day, stat_table)
+      
+      Birth_Month <- Birth_Date[2]
+      stat_table <- cbind(Birth_Month, stat_table)
+      
+      Birth_Year <- Birth_Date[1]
+      stat_table <- cbind(Birth_Year, stat_table)
+      
+    } else if (date.birth) {
+      stat_table <- cbind(Birth_Date, stat_table)
+    }
+    
+    #draft pick information
+    if(draft.year | draft.pick | round | drafted.team) {
+      
+      if(length(grep('Drafted', information)) == 0) {
+        
+        if (draft.year) {
+          Draft_Year <- NA
+          stat_table <- cbind(Draft_Year, stat_table)
+        }
+        if (draft.pick) {
+          Draft_Pick <- NA
+          stat_table <- cbind(Draft_Pick, stat_table)
+        }
+        if (round) {
+          Round <- NA
+          stat_table <- cbind(Round, stat_table)
+        }
+        if (drafted.team) {
+          Drafted_Team <- NA
+          stat_table <- cbind(Drafted_Team, stat_table)
+        }
+        
+      } else {
+        
+        draft_statement <- information %>%
+          .[grep('<div (.*) Drafted', .)[length(grep('<div (.*) Drafted', .))]+1] %>%
+          str_split('>|<') %>%
+          extract2(1) %>%
+          .[grep('#', .)] %>%
+          trimws() %>%
+          str_split(' ') %>%
+          extract2(1)
+        
+        Draft_Year <- draft_statement %>%
+          .[1] %>%
+          as.numeric()
+        
+        if (draft.pick) {
+          Draft_Pick <- draft_statement %>%
+            .[4] %>%
+            gsub('#', '', .) %>%
+            as.numeric()
+          stat_table <- cbind(Draft_Pick, stat_table)
+        }
+        
+        if (round) {
+          Round <- draft_statement %>%
+            .[3] %>%
+            as.numeric()
+          stat_table <- cbind(Round, stat_table)
+        }
+        
+        if (draft.year) {
+          stat_table <- cbind(Draft_Year, stat_table)
+        }
+        
+        if (drafted.team) {
+          Drafted_Team <- draft_statement %>%
+            .[7:length(.)] %>%
+            paste(collapse = ' ')
+          stat_table <- cbind(Drafted_Team, stat_table)
+        }
+      }
+    }
+    
+    #Shoot and Position information
+    Shoots <- information %>%
+      .[grep('Shoots', .) + 1] %>%
       str_split('<|>') %>%
       extract2(1) %>%
-      .[grep(',', .)] %>%
+      .[length(.) - 2] %>%
       trimws()
-    
-    if(Pbsep) {
-      
-      split_birth <- Birth_Place %>%
-        str_split(', ') %>%
-        extract2(1)
-      
-      Birth_City <- split_birth[1]
-      stat_table <- cbind(Birth_City, stat_table)
-      
-      Birth_State <- ifelse(length(split_birth) == 3, 
-                            split_birth[2], 
-                            NA)
-      stat_table <- cbind(Birth_State, stat_table)
-      
-      Birth_Country <- split_birth %>%
-        .[length(.)]
-      stat_table <- cbind(Birth_Country, stat_table)
-    } else {
-      stat_table <- cbind(Birth_Place, stat_table)
+    if (Shoots == '-') {
+      Shoots <- NA
     }
-  }
-  
-  #Birthdate information and seperation
-  if(dbsep & date.birth) {
-    Birth_Date <- Birth_Date %>%
-      as.character() %>%
-      str_split('-') %>%
-      .[[1]]
-    
-    Birth_Day <- Birth_Date[3]
-    stat_table <- cbind(Birth_Day, stat_table)
-    
-    Birth_Month <- Birth_Date[2]
-    stat_table <- cbind(Birth_Month, stat_table)
-    
-    Birth_Year <- Birth_Date[1]
-    stat_table <- cbind(Birth_Year, stat_table)
-    
-  } else if (date.birth) {
-    stat_table <- cbind(Birth_Date, stat_table)
-  }
-  
-  #draft pick information
-  if(draft.year | draft.pick | round |draft.elig | drafted.team) {
-    
-    if(length(grep('Drafted', information)) == 0) {
-      
-      if (draft.year) {
-        Draft_Year <- NA
-        stat_table <- cbind(Draft_Year, stat_table)
-      }
-      if (draft.pick) {
-        Draft_Pick <- NA
-        stat_table <- cbind(Draft_Pick, stat_table)
-      }
-      if (round) {
-        Round <- NA
-        stat_table <- cbind(Round, stat_table)
-      }
-      if (draft.elig) {
-        Draft_Elig <- NA
-        stat_table <- cbind(Draft_Elig, stat_table)
-      }
-      if (drafted.team) {
-        Drafted_Team <- NA
-        stat_table <- cbind(Drafted_Team, stat_table)
-      }
-      
-    } else {
-      
-      draft_statement <- information %>%
-        .[grep('Drafted', .)[length(grep('Drafted', .))]+1] %>%
-        str_split('>|<') %>%
-        extract2(1) %>%
-        .[grep('#', .)] %>%
-        trimws() %>%
-        str_split(' ') %>%
-        extract2(1)
-      
-      Draft_Year <- draft_statement %>%
-        .[1] %>%
-        as.numeric()
-      
-      if (draft.pick) {
-        Draft_Pick <- draft_statement %>%
-          .[4] %>%
-          gsub('#', '', .) %>%
-          as.numeric()
-        stat_table <- cbind(Draft_Pick, stat_table)
-      }
-      
-      if (round) {
-        Round <- draft_statement %>%
-          .[3] %>%
-          as.numeric()
-        stat_table <- cbind(Round, stat_table)
-      }
-      
-      if (draft.year) {
-        stat_table <- cbind(Draft_Year, stat_table)
-      }
-      
-      #Draft_Elig refers to the number of years a player was draft eligible before they got drafted
-      # Currently, if a player is drafted twice, just considers the first time they were drafted
-      if (draft.elig) {
-        Draft_Elig <- stat_table %>%
-          mutate(end_year = ((gsub('-(.*)', '', Season)) %>%
-                               as.numeric() %>%
-                               add(1))) %>%
-          filter(end_year == Draft_Year) %$%
-          age_at_draft %>%
-          unique() %>%
-          .[1] %>% #Get age at draft
-          floor() %>%
-          subtract(17)
-        stat_table <- cbind(Draft_Elig, stat_table)
-      }
-      
-      if (drafted.team) {
-        Drafted_Team <- draft_statement %>%
-          .[7:length(.)] %>%
-          paste(collapse = ' ')
-        stat_table <- cbind(Drafted_Team, stat_table)
-      }
+    if(shoots) {
+      stat_table <- cbind(Shoots, stat_table)
     }
-  }
-  
-  #Shoot and Position information
-  Shoots <- information %>%
-    .[grep('Shoots', .) + 1] %>%
-    str_split('<|>') %>%
-    extract2(1) %>%
-    .[length(.) - 2] %>%
-    trimws()
-  if(shoots) {
-    stat_table <- cbind(Shoots, stat_table)
-  }
-  
-  if(position) {
     
-    Position <- information %>%
-      .[grep('Position', .) + 2] %>%
+    if(position) {
+      
+      Position <- information %>%
+        .[grep('Position', .) + 2] %>%
+        .[!grepl('<', .)] %>%
+        trimws()
+      
+      #If a player has a position like LW/D, we want to preserve order (so this becomes LW/LD)
+      if(grepl('D', Position) & !is.na(Shoots)) {
+        #split position based on /
+        temp <- Position %>%
+          str_split('/') %>%
+          .[[1]]
+        #which entry has D
+        num <- temp %>%
+          grep('D', .) %>%
+          as.numeric()
+        #change this entry to include shooting side
+        temp[num] <- paste0(Shoots, 'D')
+        Position <- temp %>%
+          paste(collapse = '/')
+        #removing temporary variables
+        rm(num)
+        rm(temp)
+      }
+      stat_table <- cbind(Position, stat_table)
+    }
+    
+    #getting name
+    Name <- information %>%
+      .[(grep('plytitle', .)+1):(grep('plytitle', .) + 3)] %>%
       .[!grepl('<', .)] %>%
       trimws()
+    stat_table <- cbind(Name, stat_table)
     
-    #If a player has a position like LW/D, we want to preserve order (so this becomes LW/LD)
-    if(grepl('D', Position)) {
-      #split position based on /
-      temp <- Position %>%
-        str_split('/') %>%
-        .[[1]]
-      #which entry has D
-      num <- temp %>%
-        grep('D', .) %>%
-        as.numeric()
-      #change this entry to include shooting side
-      temp[num] <- paste0(Shoots, 'D')
-      Position <- temp %>%
-        paste(collapse = '/')
-      #removing temporary variables
-      rm(num)
-      rm(temp)
-    }
-    stat_table <- cbind(Position, stat_table)
+    ID <- website %>%
+      str_split('/') %>%
+      .[[1]] %>%
+      .[grep('player', .) + 1] %>%
+      as.numeric()
+    stat_table <- cbind(ID, stat_table)
+    
+    #returning table
+    stat_table <- stat_table %>%
+      select(-age_at_draft)
+    
+    stat_table
   }
-  
-  #getting name
-  Name <- information %>%
-    .[(grep('plytitle', .)+1):(grep('plytitle', .) + 3)] %>%
-    .[!grepl('<', .)] %>%
-    trimws()
-  
-  #returning table
-  stat_table <- cbind(Name, stat_table) %>%
-    select(-age_at_draft) %>%
-    filter(Age >= Agerange[1] & Age <= Agerange[2])
-  
-  stat_table
 }
 
 get_EP_Information <- function(html) {
@@ -438,7 +476,9 @@ get_EP_table <- function(html, Season, Need = 'Stats') {
     readHTMLTable() %>%
     .[[1]]
   
-  if (Season == 'R') {
+  if (length(full_table) == 0) {
+    full_table
+  } else if (Season == 'R') {
     full_table %>%
       .[,-(10:ncol(.))]
     
@@ -462,9 +502,11 @@ get_EP_table <- function(html, Season, Need = 'Stats') {
 
 add_missing_season <-function(column) {
   return <- column
-  for(val in 2:length(return)) {
-    if(return[val] == '') {
-      return[val] <- return[val-1]
+  if(length(return) > 1) {
+    for(val in 2:length(return)) {
+      if(return[val] == '') {
+        return[val] <- return[val-1]
+      }
     }
   }
   return
@@ -497,3 +539,4 @@ relative_age <- function(from, to) {
   
   age + middle_age
 }
+
