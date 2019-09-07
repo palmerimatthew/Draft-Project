@@ -9,7 +9,7 @@ draft_Scraper <- function(Data, Agerange = c(17, 25), draft.year = T, draft.pick
                          draft.elig = T, Agerel = "9/15", Goalie = F, position = T, shoots = T, 
                          Stats = c("S", "Team", "League", "GP", "G", "A", "TP", "PIM", "+/-", "sv%", "GAA"),
                          place.birth = T, Pbsep = T, Country = T, Height = T, Weight = T, date.birth = T, 
-                         dbsep = T, drafted.team = T, reg.playoffs = 'R') {
+                         dbsep = T, drafted.team = T, reg.playoffs = 'R', nhl_boolean = F) {
   links <- paste(readLines(Data), collapse = "\n") %>%
     str_match_all("<a href=\"(.*?)\"") %>%
     extract2(1)  %>%
@@ -34,24 +34,61 @@ draft_Scraper <- function(Data, Agerange = c(17, 25), draft.year = T, draft.pick
   player_data <- player_template %>%
     filter(Season == 'F')
   
+  NHL_list <- character(0)
+  
   for(link in player_links) {
     temp <- Ind_Scraper(link, Agerange, draft.year, draft.pick, round, draft.elig, Agerel, position, 
-                shoots, Stats, place.birth, Pbsep, Country, Height, Weight, date.birth, dbsep, drafted.team, reg.playoffs)
+                shoots, Stats, place.birth, Pbsep, country, height, weight, date.birth, dbsep, drafted.team, reg.playoffs)
     player_data <- player_data %>%
       rbind(temp)
+    if(nhl_boolean) {
+      NHL_list <- c(NHL_list, NHL_boolean(link))
+    }
   }
-  
-  player_data
-  
+  if(nhl_boolean) {
+    NHL_list <- NHL_list[-1]
+    list(Table = player_data,
+         NHL = NHL_list)
+  } else {
+    player_data
+  }
 }
 
+NHL_boolean <- function(website) {
+  html <- website %>%
+    readLines()
+  
+  information <- get_EP_Information(html)
+  
+  #getting name
+  Name <- information %>%
+    .[(grep('plytitle', .)+1):(grep('plytitle', .) + 3)] %>%
+    .[!grepl('<', .)] %>%
+    trimws()
+  
+  #AB doesn't mean anything, we just want it to get through to the else at the end
+  NHL <- get_EP_table(html, 'AB', 'Career') %>%
+    .[,1:8] %>%
+    select(League, GP) %>%
+    filter(League == 'NHL') %$%
+    GP %>%
+    as.numeric()
+  
+  if(length(NHL) == 0) {
+    character(0)
+  } else if (NHL > 0) {
+    Name
+  } else {
+    character(0)
+  }
+}
 
 Ind_Scraper <- function(website, Agerange = c(17, 25), draft.year = T, draft.pick = T, round = T, 
                        draft.elig = T, Agerel = "9/15", position = T, shoots = T, 
                        Stats = c("S", "Team", "League", "GP", "G", "A", "TP", "PIM", "+/-"),
                        place.birth = T, Pbsep = T, country = T, height = T, weight = T, date.birth = T, 
                        dbsep = T, drafted.team = T, reg.playoffs = 'R') {
-  
+  print(website)
   #Preliminary tables and configuring information ----
   html <- website %>%
     readLines()
@@ -114,7 +151,6 @@ Ind_Scraper <- function(website, Agerange = c(17, 25), draft.year = T, draft.pic
   
   #Birthplace information
   if(place.birth) {
-    
     Birth_Place <- information %>%
       .[grep('Place of Birth', .) + 2] %>%
       str_split('<|>') %>%
@@ -139,7 +175,6 @@ Ind_Scraper <- function(website, Agerange = c(17, 25), draft.year = T, draft.pic
       Birth_Country <- split_birth %>%
         .[length(.)]
       stat_table <- cbind(Birth_Country, stat_table)
-      
     } else {
       stat_table <- cbind(Birth_Place, stat_table)
     }
@@ -265,6 +300,7 @@ Ind_Scraper <- function(website, Agerange = c(17, 25), draft.year = T, draft.pic
     
     Position <- information %>%
       .[grep('Position', .) + 2] %>%
+      .[!grepl('<', .)] %>%
       trimws()
     
     #If a player has a position like LW/D, we want to preserve order (so this becomes LW/LD)
@@ -291,7 +327,7 @@ Ind_Scraper <- function(website, Agerange = c(17, 25), draft.year = T, draft.pic
   #getting name
   Name <- information %>%
     .[(grep('plytitle', .)+1):(grep('plytitle', .) + 3)] %>%
-    .[!grepl('<i', .)] %>%
+    .[!grepl('<', .)] %>%
     trimws()
   
   #returning table
@@ -317,12 +353,19 @@ get_EP_Information <- function(html) {
   html[right_start:right_end]
 }
 
-get_EP_table <- function(html, Season) {
+get_EP_table <- function(html, Season, Need = 'Stats') {
   
-  right_start <- html %>%
-    grep('<table', .) %>%
-    .[2] %>%
-    as.numeric()
+  if(Need == 'Stats') {
+    right_start <- html %>%
+      grep('<table(.*) player-stats', .) %>%
+      .[1] %>%
+      as.numeric()
+      
+  } else if (Need == 'Career') {
+    right_start <- html %>%
+      grep('<table(.*) total-player-stats', .) %>%
+      as.numeric()
+  }
   
   right_end <- html %>%
     grep('</table>', .) %>%
@@ -352,6 +395,8 @@ get_EP_table <- function(html, Season) {
       .[, -(4:11)] %>%
       mutate(Regular_Playoffs = 'Playoffs')
     rbind(regularseason_table, playoff_table)
+  } else {
+    full_table
   }
   
 }
