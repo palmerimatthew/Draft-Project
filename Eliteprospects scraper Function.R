@@ -54,6 +54,22 @@ draft_Scraper <- function(Data, Agerange = c(17, 25), draft.year = T, draft.pick
   }
 }
 
+league_list_scraper <- function(Data) {
+  
+}
+
+draft_boolean <- function(website) {
+  html <- website %>%
+    readLines()
+  
+  information <- get_EP_Information(html)
+  
+  drafted <- information %>%
+    grep('Drafted', .)
+  
+  length(drafted) == 0
+}
+
 NHL_boolean <- function(website) {
   html <- website %>%
     readLines()
@@ -360,8 +376,7 @@ get_EP_table <- function(html, Season, Need = 'Stats') {
       grep('<table(.*) player-stats', .) %>%
       .[1] %>%
       as.numeric()
-      
-  } else if (Need == 'Career') {
+  } else if(Need == 'Career') {
     right_start <- html %>%
       grep('<table(.*) total-player-stats', .) %>%
       as.numeric()
