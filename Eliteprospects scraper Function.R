@@ -38,7 +38,7 @@ draft_Scraper <- function(Data, Agerange = c(17, 25), draft.year = T, draft.pick
   
   for(link in player_links) {
     temp <- Ind_Scraper(link, Agerange, draft.year, draft.pick, round, draft.elig, Agerel, position, 
-                shoots, Stats, place.birth, Pbsep, country, height, weight, date.birth, dbsep, drafted.team, reg.playoffs)
+                shoots, Stats, place.birth, Pbsep, Country, Height, Weight, date.birth, dbsep, drafted.team, reg.playoffs)
     player_data <- player_data %>%
       rbind(temp)
     if(nhl_boolean) {
@@ -68,7 +68,8 @@ league_list_scraper <- function(Data, undrafted = T) {
   all_links <- character(0)
   
   for(i in 1:num_pages) {
-    html <- Data %>%
+    website <- paste0(Data, '?page=', i)
+    html <- website %>%
       readLines()
     links <- html %>%
       paste(collapse = '\n') %>%
@@ -90,8 +91,11 @@ league_list_scraper <- function(Data, undrafted = T) {
     links <- links[-(first_goalie_link:length(links))]
     all_links <- c(all_links, links)
   }
-  all_links %>%
-    .[!draft_boolean(all_links)]
+  boolean <- rep(T, length(all_links))
+  for(i in 1:length(all_links)) {
+    boolean[i] <- !draft_boolean(all_links[i])
+  }
+  all_links[boolean]
 }
 
 draft_boolean <- function(website) {
@@ -104,8 +108,7 @@ draft_boolean <- function(website) {
     grep('Drafted', .)
   
   length(drafted) != 0
-} %>%
-  Vectorize()
+}
 
 NHL_boolean <- function(website) {
   html <- website %>%
