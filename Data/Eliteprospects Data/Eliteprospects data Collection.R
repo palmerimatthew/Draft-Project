@@ -29,6 +29,25 @@ undrafted_links <- character(0)
 for(League in leagues) {
   for(year in 1980:2018) {
     website <- paste0(base_url, League, '/stats/', year, '-', year+1)
-    
+    links <- league_list_scraper(website)
+    undrafted_links <- c(undrafted_links, links)
   }
 }
+undrafted_links <- unique(undrafted_links)
+undrafted_df <- data.frame(undrafted_urls = undrafted_links)
+fwrite(undrafted_df, here("Data", "Eliteprospects Data", paste0("Undrafted_Links.csv")))
+
+#Large number of undrafted players, so breaking this into segments of 500 players
+segments <- undrafted_links %>%
+  length() %>%
+  divide_by(500) %>%
+  floor()
+
+
+
+
+
+
+
+
+
