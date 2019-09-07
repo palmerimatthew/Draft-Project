@@ -189,7 +189,11 @@ Ind_Scraper <- function(website, Agerange = c(17, 25), draft.year = T, draft.pic
     #This is in pounds
     if(weight) {
       Weight <- information %>%
+<<<<<<< HEAD
         .[grep('>Weight <', .) + 2] %>%
+=======
+        .[grep('Weight', .) + 2] %>%
+>>>>>>> a87d701cb206c10acfe0f8c5a2f6415142ad8f1f
         str_split('/') %>%
         .[[1]] %>%
         .[1] %>%
