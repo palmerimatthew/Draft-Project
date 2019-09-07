@@ -54,8 +54,44 @@ draft_Scraper <- function(Data, Agerange = c(17, 25), draft.year = T, draft.pick
   }
 }
 
-league_list_scraper <- function(Data) {
+league_list_scraper <- function(Data, undrafted = T) {
+  num_pages <- Data %>%
+    readLines() %>%
+    .[grep('table-pagination', .)+1] %>%
+    .[1] %>%
+    gsub(' players found', '', .) %>%
+    gsub(' ', '', .) %>%
+    as.numeric() %>%
+    divide_by(100) %>%
+    ceiling()
   
+  all_links <- character(0)
+  
+  for(i in 1:num_pages) {
+    html <- Data %>%
+      readLines()
+    links <- html %>%
+      paste(collapse = '\n') %>%
+      str_match_all("<a href=\"(.*?)\"") %>%
+      .[[1]] %>%
+      .[-(1:300),2] %>%
+      .[grep('player', .)]
+    
+    first_goalie_link <- html %>%
+      get_EP_table('AB', 'Undrafted') %$%
+      Player %>%
+      .[1] %>%
+      as.character() %>%
+      gsub(' ', '-', .) %>%
+      tolower() %>%
+      grep(links) %>%
+      as.numeric()
+    
+    links <- links[-(first_goalie_link:length(links))]
+    all_links <- c(all_links, links)
+  }
+  all_links %>%
+    .[!draft_boolean(all_links)]
 }
 
 draft_boolean <- function(website) {
@@ -67,8 +103,9 @@ draft_boolean <- function(website) {
   drafted <- information %>%
     grep('Drafted', .)
   
-  length(drafted) == 0
-}
+  length(drafted) != 0
+} %>%
+  Vectorize()
 
 NHL_boolean <- function(website) {
   html <- website %>%
@@ -379,6 +416,10 @@ get_EP_table <- function(html, Season, Need = 'Stats') {
   } else if(Need == 'Career') {
     right_start <- html %>%
       grep('<table(.*) total-player-stats', .) %>%
+      as.numeric()
+  } else if(Need == 'Undrafted') {
+    right_start <- html %>%
+      grep('<table(.*) goalie-stats', .) %>%
       as.numeric()
   }
   
