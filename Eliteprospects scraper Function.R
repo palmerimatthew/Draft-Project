@@ -9,7 +9,7 @@ draft_Scraper <- function(Data, Agerange = c(17, 25), draft.year = T, draft.pick
                          draft.elig = T, Agerel = "9/15", Goalie = F, position = T, shoots = T, 
                          Stats = c("S", "Team", "League", "GP", "G", "A", "TP", "PIM", "+/-", "sv%", "GAA"),
                          place.birth = T, Pbsep = T, Country = T, Height = T, Weight = T, date.birth = T, 
-                         dbsep = T, drafted.team = T, reg.playoffs = 'R', nhl_boolean = F) {
+                         dbsep = T, drafted.team = T, reg.playoffs = 'R') {
   links <- paste(readLines(Data), collapse = "\n") %>%
     str_match_all("<a href=\"(.*?)\"") %>%
     extract2(1)  %>%
@@ -35,24 +35,13 @@ draft_Scraper <- function(Data, Agerange = c(17, 25), draft.year = T, draft.pick
   player_data <- player_template %>%
     filter(Season == 'F')
   
-  NHL_list <- character(0)
-  
   for(link in player_links) {
     temp <- Ind_Scraper(link, Agerange, draft.year, draft.pick, round, draft.elig, Agerel, position, 
                 shoots, Stats, place.birth, Pbsep, Country, Height, Weight, date.birth, dbsep, drafted.team, reg.playoffs)
     player_data <- player_data %>%
       rbind(temp)
-    if(nhl_boolean) {
-      NHL_list <- c(NHL_list, NHL_boolean(link))
-    }
   }
-  if(nhl_boolean) {
-    NHL_list <- NHL_list[-1]
-    list(Table = player_data,
-         NHL = NHL_list)
-  } else {
-    player_data
-  }
+  player_data
 }
 
 league_list_scraper <- function(Data, undrafted = T) {
