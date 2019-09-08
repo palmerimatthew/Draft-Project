@@ -19,7 +19,8 @@ draft_Scraper <- function(Data, Agerange = c(17, 25), draft.year = T, draft.pick
     html_nodes("table") %>%
     html_table(header = T, fill = T) %>%
     extract2(2) %>%
-    filter(!Team %in% paste('ROUND', c(1,2,3,4,5,6,7,8,9,10,11,12,13,14,15))) %>%
+    filter(!Team %in% paste('ROUND', c(1,2,3,4,5,6,7,8,9,10,11,12,13,14,15)) &
+             Player != 'No selection was made') %>%
     separate(Player, c('Name', 'Position'), '\\(', fill = 'right') %$%
     Position %>%
     substr(1,1) %>%
@@ -189,11 +190,7 @@ Ind_Scraper <- function(website, Agerange = c(17, 25), draft.year = T, draft.pic
     #This is in pounds
     if(weight) {
       Weight <- information %>%
-<<<<<<< HEAD
         .[grep('>Weight <', .) + 2] %>%
-=======
-        .[grep('Weight', .) + 2] %>%
->>>>>>> a87d701cb206c10acfe0f8c5a2f6415142ad8f1f
         str_split('/') %>%
         .[[1]] %>%
         .[1] %>%

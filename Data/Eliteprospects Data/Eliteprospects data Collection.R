@@ -7,7 +7,7 @@ base_url <- 'https://www.eliteprospects.com/draft/nhl-entry-draft/'
 for(year in 1980:2019) {
   website <- paste0(base_url, year)
   temp <- draft_Scraper(website)
-  fwrite(temp, here("Data", "Eliteprospects Data", paste0("Eliteprospects_Draft_", year, '.csv')))
+  fwrite(temp, here("Data", "Eliteprospects Data", paste0("Eliteprospects Draft ", year, '.csv')))
 }
 
 ## undrafted players ----
