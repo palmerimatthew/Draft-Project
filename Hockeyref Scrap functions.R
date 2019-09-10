@@ -29,9 +29,17 @@ library(tidyverse)
 ###P = Playoffs
 ###RP = Regular season and playoffs (in seperate tables)
 
-Ref_Draft_Scraper <- function(website, ages = c(17, 50), playerStats = "all", goalieStats = "all", Season = "R") {
-  links <- website %>%
-    readLines() %>%
+Ref_Draft_Scraper <- function(website, ages = c(17, 50), playerStats = "all", goalieStats = "all", Season = "R", goalies_wanted = F) {
+  html <- website %>%
+    readLines()
+  right_start <- html %>%
+    grep('<table(.*)stats_table', .) %>%
+    as.numeric()
+  right_end <- html %>%
+    grep('</table>', .) %>%
+    as.numeric()
+  links <- html %>%
+    .[right_start:right_end] %>%
     paste(collapse = '\n') %>%
     str_match_all("<a href=\"(.*?)\"") %>% #just grabbing hyperlinks in the html
     .[[1]] %>%
@@ -39,12 +47,21 @@ Ref_Draft_Scraper <- function(website, ages = c(17, 50), playerStats = "all", go
     .[grep('/players/.', .)] %>% #only want the hyperlinks that link to players
     paste0('https://www.hockey-reference.com', .)
   
-  returnTable <- Player_Wrapper(links, ages, playerStats, goalieStats, Season)
   
   returnTable
 }
 
-
+Goalie_boolean <- function(link) {
+  G_boolean <- link %>%
+    read_html() %>%
+    html_nodes('p') %>%
+    html_text() %>%
+    str_split(' ') %>%
+    .[grep('Position', .)] %>%
+    .[[1]] %>%
+    .[2] %>%
+    grepl('G')
+}
 
 RefPlayerScraper <- function(website, ages = c(17,50), Stats = "all", Season = "R", sepTeam = F) {
   tables <- getHockeyRefTables(website)
