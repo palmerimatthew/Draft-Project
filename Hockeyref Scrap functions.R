@@ -29,7 +29,7 @@ library(tidyverse)
 ###P = Playoffs
 ###RP = Regular season and playoffs (in seperate tables)
 
-Ref_Draft_Scraper <- function(website, ages = c(17, 50), playerStats = "all", goalieStats = "all", Season = "R", goalies_wanted = F) {
+Ref_Draft_Scraper <- function(website, ages = c(17, 50), playerStats = "all", goalieStats = "all", Season = "R", sepTeam = F) {
   html <- website %>%
     readLines()
   right_start <- html %>%
@@ -47,6 +47,17 @@ Ref_Draft_Scraper <- function(website, ages = c(17, 50), playerStats = "all", go
     .[grep('/players/.', .)] %>% #only want the hyperlinks that link to players
     paste0('https://www.hockey-reference.com', .)
   
+  playerlinks <- character(0)
+  
+  for(x in links) {
+    NHL <- NHL_boolean(x)
+    G <- Goalie_boolean(x)
+    if(NHL & !G) {
+      playerlinks <- append(playerlinks, x)
+    }
+  }
+  
+  returnTable <- RefPlayerScraper(playerlinks[1], ages, playerStats, Season, sepTeam)
   
   returnTable
 }
@@ -60,6 +71,7 @@ Goalie_boolean <- function(link) {
     .[grep('Position', .)] %>%
     .[[1]] %>%
     .[2] %>%
+    sub("^([[:alpha:]]*).*", "\\1", .) %>%
     grepl('G')
 }
 
