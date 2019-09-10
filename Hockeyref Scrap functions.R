@@ -52,7 +52,7 @@ Ref_Draft_Scraper <- function(website, ages = c(17, 50), playerStats = "all", go
 }
 
 Goalie_boolean <- function(link) {
-  G_boolean <- link %>%
+  link %>%
     read_html() %>%
     html_nodes('p') %>%
     html_text() %>%
@@ -61,6 +61,15 @@ Goalie_boolean <- function(link) {
     .[[1]] %>%
     .[2] %>%
     grepl('G')
+}
+
+NHL_boolean <- function(link) {
+  link %>%
+    read_html() %>%
+    html_nodes('h4') %>%
+    html_text() %>%
+    grepl('SUMMARY', .) %>%
+    any()
 }
 
 RefPlayerScraper <- function(website, ages = c(17,50), Stats = "all", Season = "R", sepTeam = F) {
