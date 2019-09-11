@@ -49,6 +49,8 @@ Ref_Draft_Scraper <- function(website, ages = c(17, 50), playerStats = "all", go
     .[grep('/players/.', .)] %>% #only want the hyperlinks that link to players
     paste0('https://www.hockey-reference.com', .)
   
+  #'https://www.hockey-reference.com/players/f/forfe01.html'
+  #'https://www.hockey-reference.com/players/i/inval01.html'
   playerlinks <- character(0)
   
   for(x in links) {
@@ -253,9 +255,18 @@ RefPlayerScraper <- function(website, ages = c(17,50), Stats = "all", Season = "
       generalStats <- generalStats[generalStats$Age >= ages[1],]
       generalStats <- generalStats[generalStats$Age <= ages[2],]
     }
+    
+    #getting name of player
+    name <- website %>%
+      read_html() %>%
+      html_nodes('h1') %>%
+      html_text()
+    generalStats <- cbind(Name = name, generalStats)
+    
     columns_wanted <- generalStats %>%
       names() %>%
       .[!grepl('%', .)]
+    
     generalStats <- select(generalStats, columns_wanted)
   } #if(Season == "R" | Season == "RP")
   

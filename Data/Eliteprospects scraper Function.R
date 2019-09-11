@@ -15,6 +15,7 @@ draft_Scraper <- function(Data, Agerange = c(17, 25), draft.year = T, draft.pick
     extract2(1)  %>%
     .[-(1:300),2] %>%
     .[grep('player',.)]
+  
   goalie_spots <- read_html(Data) %>%
     html_nodes("table") %>%
     html_table(header = T, fill = T) %>%
@@ -25,6 +26,7 @@ draft_Scraper <- function(Data, Agerange = c(17, 25), draft.year = T, draft.pick
     Position %>%
     substr(1,1) %>%
     grep("G", .)
+  
   player_links <- links[-goalie_spots]
   if (Goalie) {
     goalie_links <- links[goalie_spots]
