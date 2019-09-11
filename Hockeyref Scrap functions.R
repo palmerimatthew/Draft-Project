@@ -63,7 +63,7 @@ Ref_Draft_Scraper <- function(website, ages = c(17, 50), playerStats = "all", go
   
   for(x in 2:length(playerlinks)) {
     temp <- RefPlayerScraper(playerlinks[x], ages, playerStats, Season, sepTeam)
-    returnTable <- rbind(returnTable, temp)
+    returnTable <- smart_rbind(returnTable, temp)
   }
   
   returnTable
