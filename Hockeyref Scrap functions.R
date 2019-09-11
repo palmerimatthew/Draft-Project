@@ -2,6 +2,8 @@ library(rvest)
 library(XML)
 library(stringr)
 library(tidyverse)
+library(wrapr)
+
 
 #skater stats codebook
 ###all = all available stats
@@ -59,6 +61,11 @@ Ref_Draft_Scraper <- function(website, ages = c(17, 50), playerStats = "all", go
   
   returnTable <- RefPlayerScraper(playerlinks[1], ages, playerStats, Season, sepTeam)
   
+  for(x in 2:length(playerlinks)) {
+    temp <- RefPlayerScraper(playerlinks[x], ages, playerStats, Season, sepTeam)
+    returnTable <- rbind(returnTable, temp)
+  }
+  
   returnTable
 }
 
@@ -84,7 +91,39 @@ NHL_boolean <- function(link) {
     any()
 }
 
+smart_rbind <- function(table1, table2) {
+  if(length(names(table1)) == length(names(table2))) {
+    if(all(names(table1) == names(table2))) {
+      rbind(table1, table2)
+    }
+  } else {
+    colnames_table1 <- names(table1)
+    colnames_table2 <- names(table2)
+    not_table1 <- colnames_table2 %>%
+      .[!(colnames_table2 %in% colnames_table1)]
+    not_table2 <- colnames_table1 %>%
+      .[!(colnames_table1 %in% colnames_table2)]
+    
+    for (x in not_table1) {
+      table1 <- let(alias = list(rname = x), expr = mutate(table1, rname = NA))
+    }
+    
+    for (x in not_table2) {
+      table2 <- let(alias = list(rname = x), expr = mutate(table2, rname = NA))
+    }
+    
+    if(length(colnames_table1) > length(colnames_table2)) {
+      table2 <- select(table2, colnames_table1)
+      rbind(table1, table2)
+    } else {
+      table1 <- select(table1, colnames_table2)
+      rbind(table1, table2)
+    }
+  }
+}
+
 RefPlayerScraper <- function(website, ages = c(17,50), Stats = "all", Season = "R", sepTeam = F) {
+  print(website)
   tables <- getHockeyRefTables(website)
   if(Stats == "all") {
     Stats <- c("Cor", "Fen", "PDO", "oiS", "IceTime", "Awards", "pmBreak", "PS", "xGF")
@@ -101,6 +140,10 @@ RefPlayerScraper <- function(website, ages = c(17,50), Stats = "all", Season = "
       playoffTable$Age <- as.numeric(levels(playoffTable$Age))[playoffTable$Age]
       playoffTable <- playoffTable[playoffTable$Age >= ages[1],]
       playoffTable <- playoffTable[playoffTable$Age <= ages[2],]
+      columns_wanted <- playoffTable %>%
+        names() %>%
+        .[!grepl('%', .)]
+      playoffTable <- select(playoffTable, columns_wanted)
     } #if(length(playoffTable) == 0)
   } #if(Season == "P" | Season == "RP")
   if(Season == "R" | Season == "RP") {
@@ -210,6 +253,10 @@ RefPlayerScraper <- function(website, ages = c(17,50), Stats = "all", Season = "
       generalStats <- generalStats[generalStats$Age >= ages[1],]
       generalStats <- generalStats[generalStats$Age <= ages[2],]
     }
+    columns_wanted <- generalStats %>%
+      names() %>%
+      .[!grepl('%', .)]
+    generalStats <- select(generalStats, columns_wanted)
   } #if(Season == "R" | Season == "RP")
   
   #Constructing return structures
