@@ -73,16 +73,31 @@ for(league in league_list) {
   let(alias = list(rname = gsub('-', '_', league)), expr = (rname = undrafted_links))
 }
 
-undrafted_links <- unique(undrafted_links)
-undrafted_df <- data.frame(undrafted_urls = undrafted_links)
-fwrite(undrafted_df, here("Data", "Eliteprospects Data", paste0("Undrafted_Links.csv")))
+
 
 #Large number of undrafted players, so breaking this into segments of 2500 players
+undrafted_links <- read.csv('~/Desktop/Github Repos/Draft-Project/Data/Eliteprospects Data/Eliteprospects Undrafted Links.csv') %$%
+  links %>%
+  as.character()
+
 segments <- undrafted_links %>%
   length() %>%
   divide_by(2500) %>%
   floor()
 
+for(i in 2:segments) {
+  links <- undrafted_links[(2500*(i-1)+1):(2500*i)]
+  segment_df <- EP_Ind_Scraper(links[1])
+  links <- links[-1]
+  j <- 2
+  for(website in links) {
+    print(j)
+    temp <- EP_Ind_Scraper(website)
+    segment_df <- rbind(segment_df, temp)
+    j <- j+1
+  }
+  fwrite(segment_df, here('Data', 'Eliteprospects Data', paste0('Eliteprospects Undrafted Segment ', i, '.csv')))
+}
 
 
 
