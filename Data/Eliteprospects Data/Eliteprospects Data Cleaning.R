@@ -1,6 +1,9 @@
 require(here)
 require(wrapr)
 require(data.table)
+require(magrittr)
+require(dplyr)
+require(tidyr)
 
 ##Drafted ----
 
@@ -70,14 +73,145 @@ fwrite(Combined, here("Data", "Eliteprospects Data", 'Eliteprospects Clean Draft
 
 # Combining undrafted eliteprospects data ----
 
-Combined_undrafted <- data.frame()
+# Combined_undrafted <- Undrafted %>%
+#   filter(Drafted_Team == '' &
+#            !grepl('G', Position) &
+#            League != '' &
+#            GP != '-' &
+#            GP != '' &
+#            GP != '0') %>%
+#   mutate(Drafted_Team = NA_character_,
+#          Birth_State = as.character(Birth_State),
+#          Birth_State = if_else(Birth_State == '', NA_character_, Birth_State),
+#          Birth_Country = as.character(Birth_Country),
+#          Birth_Country = if_else(Birth_Country == '', NA_character_, Birth_Country),
+#          Birth_City = as.character(Birth_City),
+#          Birth_City = if_else(Birth_City == '', NA_character_, Birth_City),
+#          Country = as.character(Country),
+#          Country = if_else(Country == '', NA_character_, Country),
+#          Team = as.character(Team),
+#          Team = if_else(Team == '', NA_character_, Team))
+# 
+#   mutate(Position = as.character(Position),
+#          Shoots = as.character(Shoots),
+#          Shoots = case_when(Shoots == 'l' ~ 'L',
+#                             Shoots == 'LR' ~ NA_character_,
+#                             Shoots == 'RL' ~ NA_character_,
+#                             Shoots == '' ~ NA_character_,
+#                             Shoots == 'D' ~ NA_character_,
+#                             Shoots == 'F' ~ NA_character_,
+#                             TRUE ~ Shoots),
+#          Drafted_Team = NA_character_,
+#          Birth_State = as.character(Birth_State),
+#          Birth_State = case_when(Birth_Country == 'CA USA' ~ 'CA', 
+#                                  Birth_State == 'Ca' ~ 'CA',
+#                                  Birth_State == '' ~ NA_character_,
+#                                  TRUE ~ Birth_State),
+#          Birth_Country = as.character(Birth_Country),
+#          Birth_Country = case_when(Birth_Country == 'CA USA' ~ 'USA',
+#                                    Birth_Country == 'US' ~ 'USA',
+#                                    Birth_Country == 'USa' ~ 'USA',
+#                                    Birth_Country == 'C' ~ 'CAN',
+#                                    Birth_Country == 'Haiti' ~ 'HTI',
+#                                    Birth_Country == 'HK' ~ 'HKG',
+#                                    Birth_Country == 'S&gt;VK' ~ 'SVK',
+#                                    Birth_Country == 'Swe' ~ 'SWE',
+#                                    Birth_Country == '' ~ NA_character_,
+#                                    TRUE ~ Birth_Country),
+#          Birth_City = as.character(Birth_City),
+#          Birth_City = if_else(Birth_City == '', NA_character_, Birth_City),
+#          Country = as.character(Country),
+#          Country = if_else(Country == '', NA_character_, Country),
+#          Team = as.character(Team),
+#          Team = if_else(Team == '', NA_character_, Team),
+#          League = as.character(League),
+#          GP = as.numeric(as.character(GP)))
+
+# Seperating data into production data and player details ----
+
+drafted_combined <- read.csv(here("Data", "Eliteprospects Data", 'Eliteprospects Clean Drafted.csv'))
+
+undrafted_combined <- data.frame()
 
 for(i in 1:58) {
   temp <- read.csv(here('Data', 'Eliteprospects Data', paste0('Eliteprospects Undrafted Segment ', i, '.csv')))
-  Combined_undrafted <- rbind(Combined_undrafted, temp)
+  undrafted_combined <- rbind(undrafted_combined, temp)
 }
 
-fwrite(Combined_undrafted, here('Data', 'Eliteprospects Data', 'Eliteprospects Clean Undrafted.csv'))
+undrafted_combined <- filter(undrafted_combined, 
+                             (Drafted_Team == '' | is.na(Drafted_Team)) &
+                               !grepl('G', Position))
+
+fwrite(undrafted_combined, here('Data', 'Eliteprospects Data', 'Eliteprospects Clean Undrafted.csv'))
+
+combined <- rbind(drafted_combined, undrafted_combined) %>%
+  filter(League != '' &
+           GP != '-' &
+           GP != '' &
+           GP != '0' &
+           ID != 5313 &     #This player swapped from goalie to player
+           ID != 13927) %>% #This player swapped from goalie to player
+  mutate(Name = as.character(Name))
+
+combined_player_stats <- combined %>%
+  select(ID, Name, Season:X...) %>%
+  mutate(Season = as.character(Season),
+         Team = as.character(Team),
+         League = as.character(League),
+         GP = as.numeric(as.character(GP)),
+         G = as.numeric(as.character(G)),
+         A = as.numeric(as.character(A)),
+         TP = as.numeric(as.character(TP)),
+         PIM = as.numeric(as.character(PIM)),
+         X... = as.character(X...),
+         X... = case_when(X... == '--33' ~ '-33',
+                          X... == '--6' ~ '-6',
+                          X... == '-0' ~ '0',
+                          X... == '-2-1' ~ '-2',
+                          X... == '-6su' ~ '-6',
+                          X... == '1-' ~ '-1',
+                          X... == '1-7' ~ '-17',
+                          X... == '3&#2' ~ '32'))
+
+combined_player_detail <- combined %>%
+  select(ID:Weight) %>%
+  .[!duplicated(.$ID),] %>%
+  mutate(Position_Clean = Position) %>%
+  rename(Position_Raw = Position) %>%
+  separate(Position_Clean, )
+
+
+f
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 Drafted <- read.csv(here("Data", "Eliteprospects Data", 'Eliteprospects Clean Drafted.csv'))
 
