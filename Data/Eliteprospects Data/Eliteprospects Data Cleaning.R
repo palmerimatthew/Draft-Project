@@ -65,6 +65,24 @@ Combined <- Combined %>%
 #Combined data.frame row count: 100397
 
 #Based on row counts, it seems like we have properly removed just the duplicated rows.
-fwrite(Combined, here("Data", "Eliteprospects Data", paste0('Eliteprospects Clean Drafted.csv')))
+fwrite(Combined, here("Data", "Eliteprospects Data", 'Eliteprospects Clean Drafted.csv'))
 
 
+# Combining undrafted eliteprospects data ----
+
+Combined_undrafted <- data.frame()
+
+for(i in 1:58) {
+  temp <- read.csv(here('Data', 'Eliteprospects Data', paste0('Eliteprospects Undrafted Segment ', i, '.csv')))
+  Combined_undrafted <- rbind(Combined_undrafted, temp)
+}
+
+fwrite(Combined_undrafted, here('Data', 'Eliteprospects Data', 'Eliteprospects Clean Undrafted.csv'))
+
+Drafted <- read.csv(here("Data", "Eliteprospects Data", 'Eliteprospects Clean Drafted.csv'))
+
+Undrafted <- read.csv(here('Data', 'Eliteprospects Data', 'Eliteprospects Clean Undrafted.csv'))
+
+Combined <- rbind(Drafted, Undrafted)
+
+fwrite(Combined, here('Data', 'Eliteprospects Data', 'Eliteprospects Clean Combined.csv'))
