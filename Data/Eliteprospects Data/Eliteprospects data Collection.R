@@ -63,7 +63,7 @@ for(league in league_list) {
   print(league)
   league <- gsub(' ', '-', league)
   undrafted_links <- character(0)
-  for(year in 1990:2010) {
+  for(year in 1990:2018) {
     links <- character(0)
     print(paste('  ', year))
     website <- paste0(base_url, league, '/stats/', year, '-', year+1)
@@ -83,9 +83,10 @@ undrafted_links <- read.csv('~/Desktop/Github Repos/Draft-Project/Data/Elitepros
 segments <- undrafted_links %>%
   length() %>%
   divide_by(2500) %>%
-  floor()
+  floor() %>%
+  add(1)
 
-for(i in 2:segments) {
+for(i in 1:segments) {
   links <- undrafted_links[(2500*(i-1)+1):(2500*i)]
   segment_df <- EP_Ind_Scraper(links[1])
   links <- links[-1]
