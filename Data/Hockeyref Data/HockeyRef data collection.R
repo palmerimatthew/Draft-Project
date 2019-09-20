@@ -1,6 +1,7 @@
 require(here)
 require(data.table)
 require(stringr)
+require(data.table)
 
 ## Drafts ----
 base_url <- 'https://www.hockey-reference.com/draft/NHL_'
@@ -33,7 +34,10 @@ for(i in seq(0, 600, 200)) {
 }
 links <- paste0('https://www.hockey-reference.com', links)
 
-undrafted <- data.frame()
-for(link in links) {
-  temp <- Ref_Player_Scraper(link)
+undrafted <- Ref_Player_Scraper(links[1])
+for(i in 2:length(links)) {
+  temp <- Ref_Player_Scraper(links[i])
+  undrafted <- smart_rbind(undrafted, temp)
 }
+
+fwrite(undrafted, here('Data', 'Hockeyref Data', 'Hockeyref undrafted raw.csv'))
