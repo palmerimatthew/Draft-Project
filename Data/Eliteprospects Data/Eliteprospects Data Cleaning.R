@@ -150,7 +150,8 @@ combined <- rbind(drafted_combined, undrafted_combined) %>%
            GP != '' &
            GP != '0' &
            ID != 5313 &     #This player swapped from goalie to player
-           ID != 13927) %>% #This player swapped from goalie to player
+           ID != 13927 &
+           Position != '-') %>% #This player swapped from goalie to player
   mutate(Name = as.character(Name))
 
 combined_player_stats <- combined %>%
@@ -178,45 +179,47 @@ combined_player_detail <- combined %>%
   .[!duplicated(.$ID),] %>%
   mutate(Position_Clean = Position) %>%
   rename(Position_Raw = Position) %>%
-  separate(Position_Clean, )
+  separate(Position_Clean, into = c('Position_Clean', 'Undesired'), sep = '/', extra = 'drop', fill = 'right') %>%
+  mutate(Position_Clean = case_when(Position_Clean == 'C, W' ~ 'C',
+                                    Position_Clean == 'DD' ~ 'D',
+                                    Position_Clean == 'LRD' ~ 'D',
+                                    Position_Clean == 'RF' ~ 'F',
+                                    Position_Clean == 'RLD' ~ 'D',
+                                    Position_Clean == 'L' ~ 'LW',
+                                    TRUE ~ toupper(Position_Clean)),
+         Shoots = toupper(as.character(Shoots)),
+         Shoots = case_when(Shoots == 'L' ~ 'L',
+                            Shoots == 'R' ~ 'R',
+                            TRUE ~ NA_character_),
+         Drafted_Team = as.character(Drafted_Team),
+         Drafted_Team = if_else(Drafted_Team == '', NA_character_, Drafted_Team),
+         Birth_Country = as.character(Birth_Country),
+         Birth_State = as.character(Birth_State),
+         Birth_State = case_when(Birth_Country == 'CA USA' ~ 'CA',
+                                 Birth_State == 'Ca' ~ 'CA',
+                                 Birth_State == '' ~ NA_character_,
+                                 TRUE ~ toupper(Birth_State)),
+         Birth_Country = as.character(Birth_Country),
+         Birth_Country = case_when(Birth_Country == 'CA USA' ~ 'USA',
+                                   Birth_Country == 'US' ~ 'USA',
+                                   Birth_Country == 'USa' ~ 'USA',
+                                   Birth_Country == 'C' ~ 'CAN',
+                                   Birth_Country == 'Haiti' ~ 'HTI',
+                                   Birth_Country == 'HK' ~ 'HKG',
+                                   Birth_Country == 'S&gt;VK' ~ 'SVK',
+                                   Birth_Country == 'Swe' ~ 'SWE',
+                                   Birth_Country == '' ~ NA_character_,
+                                   TRUE ~ Birth_Country),
+         Birth_City = as.character(Birth_City),
+         Birth_City = if_else(Birth_City == '', NA_character_, Birth_City),
+         Country = as.character(Country),
+         Country = case_when(Country == 'Czech Rep.' ~ 'Czech Republic',
+                             Country == 'U.K.' ~ 'England',
+                             Country == '' ~ NA_character_,
+                             TRUE ~ Country)) %>%
+  select(ID:Position_Raw, Position_Clean, Shoots:Weight)
 
 
-f
+fwrite(combined_player_detail, here('Data', 'Player_Detail.csv'))
+fwrite(combined_player_stats, here('Data', 'Player_Stats.csv'))
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-Drafted <- read.csv(here("Data", "Eliteprospects Data", 'Eliteprospects Clean Drafted.csv'))
-
-Undrafted <- read.csv(here('Data', 'Eliteprospects Data', 'Eliteprospects Clean Undrafted.csv'))
-
-Combined <- rbind(Drafted, Undrafted)
-
-fwrite(Combined, here('Data', 'Eliteprospects Data', 'Eliteprospects Clean Combined.csv'))
