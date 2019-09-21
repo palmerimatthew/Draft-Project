@@ -7,6 +7,7 @@ install_github('https://github.com/palmerimatthew/EPScraper')
 require(EPScraper)
 require(dplyr)
 require(tidyr)
+require(data.table)
 
 
 # Drafted HockeyRef combination ----
@@ -212,5 +213,51 @@ temp <- problem_players %>%
 temp[271:275, 1] = 115880
 temp[277:292, 1] = 21557
 
+
+
 Matching <- rbind(Matching, temp)
 
+
+## Cleaning Matching table ----
+NHL_Player_Stats <- Matching %>%
+  filter(Lg == 'NHL') %>%
+  mutate(Season = as.character(Season),
+         Tm = as.character(Tm),
+         Lg = as.character(Lg),
+         Awards = as.character(Awards),
+         Awards = if_else(Awards == '', NA_character_, Awards)) %>%
+  rename(Team = Tm,
+         League = Lg,
+         NHL_GP = GP,
+         NHL_G = G,
+         NHL_A = A,
+         NHL_TP = PTS,
+         NHL_PIM = PIM,
+         NHL_S = S,
+         NHL_TSA = TSA,
+         NHL_TOI = TOI,
+         NHL_FOW = FOW,
+         NHL_FOL = FOL,
+         NHL_BLK = BLK,
+         NHL_TK = TK,
+         NHL_GV = GV,
+         NHL_CF = CF,
+         NHL_CA = CA,
+         NHL_FF = FF,
+         NHL_FA = FA,
+         NHL_oiGF = oiGF,
+         NHL_oiGA = oiGA,
+         NHL_PDO = PDO,
+         NHL_TGF = TGF,
+         NHL_PGF = PGF,
+         NHL_TGA = TGA,
+         NHL_PGA = PGA,
+         NHL_PM = X...,
+         NHL_OPS = OPS,
+         NHL_DPS = DPS,
+         NHL_PS = PS,
+         NHL_xGF = xGF,
+         NHL_xGA = xGA) %>%
+  select(-ATOI)
+
+fwrite(NHL_Player_Stats, here('Data', 'Player_NHL_Stats.csv'))
