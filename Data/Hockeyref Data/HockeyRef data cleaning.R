@@ -116,10 +116,14 @@ for(i in 1275:nrow(problem_players)) {
   
   links <- EP_Name_Search(target_name, include_db = T)
   
-  potential_links <- links %>%
-    separate(Birth_Date, c('Month', 'Day', 'Year'), sep = '/') %>%
-    mutate(Year = as.numeric(Year)) %>%
-    filter(abs(Year - desired_birth_years) < 1)
+  if(length(links) > 0) {
+    potential_links <- links %>%
+      separate(Birth_Date, c('Month', 'Day', 'Year'), sep = '/') %>%
+      mutate(Year = as.numeric(Year)) %>%
+      filter(abs(Year - desired_birth_years) < 1)
+  } else {
+    potential_links <- data.frame()
+  }
   
   if(nrow(potential_links) == 1) {
     problem_players[i,1] <- potential_links %>%
@@ -130,3 +134,83 @@ for(i in 1275:nrow(problem_players)) {
       as.numeric()
   }
 }
+
+
+## Leftovers likely need to hard-code
+temp <- problem_players %>%
+  filter(!is.na(ID))
+
+Matching <- rbind(Matching, temp)
+
+problem_players <- problem_players %>%
+  filter(is.na(ID))
+
+#Hard-coding
+temp <- problem_players %>%
+  .[-293,] %>%
+  mutate(ID = case_when(Name == 'Matt Read' ~ 33243,
+                        Name == 'Brian Gibbons' ~ 24396,
+                        Name == 'Ryan Wilson' ~ 13843,
+                        Name == 'Mike Johnson' ~ 5687,
+                        Name == 'Francis Breault' ~ 73521,
+                        Name == 'Rob Collins' ~ 13510,
+                        Name == 'Sean Collins' ~ 11422,
+                        Name == 'Jacob MacDonald' ~ 60064,
+                        Name == 'Andrew Miller' ~ 17845,
+                        Name == 'Stephane Richer' ~ 41492,
+                        Name == 'Trevor Smith' ~ 11437,
+                        Name == 'Mel Angelstad' ~ 69066,
+                        Name == 'Alexandre Boikov' ~ 18449,
+                        Name == 'Matt Fraser' ~ 37148,
+                        Name == 'Erik Gustafsson' ~ 5545,
+                        Name == 'Philip Holm' ~ 11070,
+                        Name == 'Magnus Johansson' ~ 292,
+                        Name == 'Dan Renouf' ~ 76892,
+                        Name == 'Derek Smith' ~ 14185,
+                        Name == 'Jason Williams' ~ 8713,
+                        Name == 'Paul Gagne' ~ 27883,
+                        Name == 'Dave Gans' ~ 38468,
+                        Name == 'Viacheslav Fetisov' ~ 21368,
+                        Name == 'Sylvain Cote' ~ 31444,
+                        Name == 'Stephane Richer' ~ 22800,
+                        Name == 'Michael Ware' ~ 72977,
+                        Name == 'Bobby Babcock' ~ 78133,
+                        Name == 'Evgeny Davydov' ~ 1628,
+                        Name == 'Viacheslav Butsayev' ~ 1673,
+                        Name == 'Viktor Gordiouk' ~ 20426,
+                        Name == 'Sandis Ozolinsh' ~ 8690,
+                        Name == 'Dmitry Yushkevich' ~ 18636,
+                        Name == 'Alexander Andrievski' ~ 41140,
+                        Name == 'Grigori Panteleev' ~ 1953,
+                        Name == 'Victor Ignatjev' ~ 1838,
+                        Name == 'Niklas Sundstrom' ~ 740,
+                        Name == 'Stefan Bergkvist' ~ 706,
+                        Name == 'Harijs Vitolinsh' ~ 2142,
+                        Name == 'Ilja Byakin' ~ 1908,
+                        Name == 'Pavel Torgaev' ~ 28713,
+                        Name == 'Aki Berg' ~ 2667,
+                        Name == 'Aleksey Morozov' ~ 11044,
+                        Name == 'Sergey Gusev' ~ 21002,
+                        Name == 'Yevgeny Shaldybin' ~ 18504,
+                        Name == 'Alexandre Volchkov' ~ 19081,
+                        Name == 'Eric Belanger' ~ 8758,
+                        Name == 'Patrick Leahy' ~ 8991,
+                        Name == 'Pavel Vorobiev' ~ 9561,
+                        Name == 'Alex Frolov' ~ 8591,
+                        Name == 'Dave Morisset' ~ 29020,
+                        Name == 'Tomi Maki' ~ 3215,
+                        Name == 'Maxim Kondratiev' ~ 9384,
+                        Name == 'Dave Moss' ~ 8959,
+                        Name == 'Oliver Ekman-Larsson' ~ 7693,
+                        Name == 'Adam Almqvist' ~ 10378,
+                        Name == 'J.C. Lipon' ~ 45487,
+                        Name == 'Edward Lee' ~ 125386,
+                        Name == 'David Sacco' ~ 51692,
+                        Name == 'Alex Steen' ~ 460,
+                        Name == 'Jarkko Immonen' ~ 3181,
+                        TRUE ~ ID))
+temp[271:275, 1] = 115880
+temp[277:292, 1] = 21557
+
+Matching <- rbind(Matching, temp)
+
