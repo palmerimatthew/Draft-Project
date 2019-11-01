@@ -172,7 +172,9 @@ combined_player_stats <- combined %>%
                           X... == '-6su' ~ '-6',
                           X... == '1-' ~ '-1',
                           X... == '1-7' ~ '-17',
-                          X... == '3&#2' ~ '32'))
+                          X... == '3&#2' ~ '32',
+                          TRUE ~ X...),
+         X... = as.numeric(X...))
 
 combined_player_detail <- combined %>%
   select(ID:Weight) %>%
