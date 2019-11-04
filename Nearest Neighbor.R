@@ -1,6 +1,8 @@
 require(here)
 require(magrittr)
 require(tidyverse)
+require(ggplot2)
+require(gridExtra)
 
 Player_Details <- read_csv(here('Data', 'Player_Detail.csv'))
 Junior_Stats <- read_csv(here('Data', 'Player_Junior_Stats.csv'), guess_max = 40000) %>%
@@ -38,7 +40,7 @@ League <- Junior_Stats %>%
 League_Player_Details <- Player_Details %>%
   filter(ID %in% League$ID)
 
-#Distribution of variables for distance calculation
+#Distribution of variables for distance calculation ----
 
 #Weight: Normal
 plot(density(filter(League_Player_Details, !is.na(Weight))$Weight, kernel = 'gaussian'))
@@ -55,6 +57,12 @@ plot(density(League$Points_Game, kernel = 'gaussian'))
 x <- seq(0, 3.5, 0.01)
 lines(x-.08, dgamma(x, 1.75, 3.2), col='red')
 
+#Goals:
+plot(density(League$G, kernel = 'gaussian'))
+
+#Assists:
+plot(density(League$A, kernel = 'gaussian'))
+
 #Age: Interesting
 plot(density(League$Age, kernel = 'gaussian'))
 #these peaks are associated with birthdates in the early parts of the year. Malcolm Gladwell goes into 
@@ -63,7 +71,126 @@ plot(density(League$Age, kernel = 'gaussian'))
 # players that are born right after (in January) are going to be older and bigger, and thus look better, 
 # so they will have a better chance of getting choosen to play on travel teams and improve more.
 
+# Scale Normalization techniques ----
 
+normalization_calc <- function(df, new_point, method) {
+  #No normalization is done
+  if (method == 'None') {
+    df <- mutate(df, distance = sqrt((x - new_point[1])^2 + (y - new_point[2])^2))
+  } 
+  #Normalized with the Standard Deviation
+  else if (method == 'StDev') { 
+    x_mean = mean(df$x)
+    y_mean = mean(df$y)
+    x_sd = sd(df$x)
+    y_sd = sd(df$y)
+    df <- mutate(df, x_adj = (x - x_mean)/x_sd,
+                 y_adj = (y - y_mean)/y_sd,
+                 distance = sqrt((x_adj - (new_point[1] - x_mean)/x_sd)^2 + 
+                                 (y_adj - (new_point[2] - y_mean)/y_sd)^2)) %>%
+      select(x, y, distance)
+  } else if (method == 'MinMax') {
+    x_min = min(df$x)
+    x_max = max(df$x)
+    y_min = min(df$y)
+    y_max = max(df$y)
+    df <- mutate(df, x_adj = (x - x_min)/(x_max - x_min),
+                 y_adj = (y - y_min)/(y_max - y_min),
+                 distance = sqrt((x_adj - (new_point[1] - x_min)/(x_max - x_min))^2 +
+                                 (y_adj - (new_point[2] - y_min)/(y_max - y_min))^2)) %>%
+      select(x, y, distance)
+    
+  } else if (method == 'ProbDenEmpir') {
+    x_cdf = ecdf(df$x)
+    y_cdf = ecdf(df$y)
+    df <- mutate(df, x_dist = x_cdf(new_point[1]) - x_cdf(x),
+                 y_dist = y_cdf(new_point[2]) - y_cdf(y),
+                 distance = sqrt(x_dist^2 + y_dist^2)) %>%
+      select(x, y, distance)
+  } else if (method == 'ProbDenFit') {
+    
+  }
+  #graphing resulting neighborhood
+  df %>%
+    rbind(data.frame(x = new_point[1], y = new_point[2], distance = 0)) %>%
+    .[order(.$distance),] %>%
+    mutate(rank = seq(0, nrow(.) - 1),
+           type = case_when(rank == 0 ~ 'New Point',
+                            rank <= k ~ 'Neighbor',
+                            TRUE ~ 'Original'),
+           type = as.factor(type),
+           type = factor(type, levels = c('New Point', 'Neighbor', 'Original'))) %>%
+    .[order(.$rank, decreasing = T),] %>%
+    ggplot(aes(x = x, y = y, color = type)) + geom_point() + 
+    scale_color_manual(values = c('Red', 'Blue', 'Gray')) + theme_classic()
+}
+
+## Simulation 1: Normal vs Gamma with similar scale
+
+x <- rnorm(1000, 7.5, 1)
+y <- rgamma(1000, 1, 1) + 5
+df <- data.frame(x,y)
+new_data_point <- c(rnorm(1, 7.5, 1), rgamma(1, 1, 1) + 5)
+k <- 100
+
+
+a <- df %>%
+  normalization_calc(new_data_point, 'None') + 
+  labs(title = 'No Normalization') + theme(plot.title = element_text(hjust=0.5))
+b <- df %>%
+  normalization_calc(new_data_point, method = 'StDev') +
+  labs(title = 'Standard Deviation Normalization') + theme(plot.title = element_text(hjust=0.5))
+c <- df %>%
+  normalization_calc(new_data_point, method = 'MinMax') +
+  labs(title = 'Min Max Normalization') + theme(plot.title = element_text(hjust=0.5))
+d <- df %>%
+  normalization_calc(new_data_point, method = 'ProbDenEmpir') +
+  labs(title = 'Probability Density Normalization') + theme(plot.title = element_text(hjust=0.5))
+grid.arrange(a,b,c,d, ncol = 2)
+
+## Simulation 2: Normal vs Normal with different scale
+
+x <- rnorm(1000, 100, 20)
+y <- rnorm(1000, 5, 1)
+df <- data.frame(x,y)
+new_data_point <- c(rnorm(1, 100, 20), rnorm(1, 5, 1))
+k <- 100
+
+a <- df %>%
+  normalization_calc(new_data_point, 'None') + 
+  labs(title = 'No Normalization') + theme(plot.title = element_text(hjust=0.5))
+b <- df %>%
+  normalization_calc(new_data_point, method = 'StDev') +
+  labs(title = 'Standard Deviation Normalization') + theme(plot.title = element_text(hjust=0.5))
+c <- df %>%
+  normalization_calc(new_data_point, method = 'MinMax') +
+  labs(title = 'Min Max Normalization') + theme(plot.title = element_text(hjust=0.5))
+d <- df %>%
+  normalization_calc(new_data_point, method = 'ProbDenEmpir') +
+  labs(title = 'Probability Density Normalization') + theme(plot.title = element_text(hjust=0.5))
+grid.arrange(a,b,c,d, ncol = 2)
+
+## Simulation 3: Normal vs Gamma with different scale
+
+x <- rnorm(1000, 100, 20)
+y <- rgamma(1000, 1, 1) + 5
+df <- data.frame(x,y)
+new_data_point <- c(rnorm(1, 100, 20), rgamma(1000, 1, 1) + 5)
+k <- 100
+
+a <- df %>%
+  normalization_calc(new_data_point, 'None') + 
+  labs(title = 'No Normalization') + theme(plot.title = element_text(hjust=0.5))
+b <- df %>%
+  normalization_calc(new_data_point, method = 'StDev') +
+  labs(title = 'Standard Deviation Normalization') + theme(plot.title = element_text(hjust=0.5))
+c <- df %>%
+  normalization_calc(new_data_point, method = 'MinMax') +
+  labs(title = 'Min Max Normalization') + theme(plot.title = element_text(hjust=0.5))
+d <- df %>%
+  normalization_calc(new_data_point, method = 'ProbDenEmpir') +
+  labs(title = 'Probability Density Normalization') + theme(plot.title = element_text(hjust=0.5))
+grid.arrange(a,b,c,d, ncol = 2)
 
 # Interesting Findings ----
 
