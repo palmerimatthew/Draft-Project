@@ -1,9 +1,10 @@
 require(here)
 require(magrittr)
+require(MASS)
 require(tidyverse)
 require(ggplot2)
 require(gridExtra)
-require(MASS)
+require(wrapr)
 
 Player_Details <- read_csv(here('Data', 'Player_Detail.csv'))
 Junior_Stats <- read_csv(here('Data', 'Player_Junior_Stats.csv'), guess_max = 40000) %>%
@@ -81,8 +82,53 @@ plot(density(League$Age, kernel = 'gaussian'))
 
 
 #Getting nearest neighbors for Patrick Kane ----
+
+distance_calc <- function(dataset, new_point, variables_used, weights, method) {
+  #necessary to join output back to original dataframe
+  new_point <- select(new_point, one_of(colnames(dataset)))
+  dataset <- rbind(new_point, dataset) %>%
+    mutate(for_join = paste0(ID, Team))
+  
+  #default setting for weights
+  weights <- rep(1, length(variables_used))
+  
+  new_dataset <- dataset %>%
+    select(for_join, one_of(variables_used))
+  
+  #normalizing each column
+  names <- colnames(new_dataset)
+  for (i in (2:ncol(new_dataset))) {
+    temp <- new_dataset[[i]] %>%
+      adjusted_for_distance(method)
+    new_dataset[,i] <- temp - temp[1]
+    names[i] <- paste(names[i], 'distance', sep='_')
+  }
+  colnames(new_dataset) <- names
+  
+}
+
+adjusted_for_distance <- function(column, method) {
+  if (method == 'StDev') {
+    column_mean <- mean(column)
+    column_sd <- sd(column)
+    column_adj = (column - column_mean)/column_sd
+  } else if (method == 'MinMax') {
+    column_min <- min(column)
+    column_max <- max(column)
+    column_adj = (column - column_min)/(column_max - column_min)
+  } else if (method == 'ProbDenEmpir') {
+    column_cdf = ecdf(column)
+    column_adj = column_cdf(column)
+  } else if (method == 'ProbDenFit') {
+    
+  }
+  column_adj
+}
+
 Neighbors <- League %>%
-  inner_join(Player_Details, by = 'ID') %>%
+  filter(!is.na(Weight) &
+           Age > Patrick_Kane$Age -0.5 &
+           Age < Patrick_Kane$Age +0.5) %>%
   mutate(Points_Game = TP/GP,
          #Standard Deviation Normalization
          Height_adj = (Height - mean(Height))/sd(Height),
@@ -90,7 +136,10 @@ Neighbors <- League %>%
          Points_adj = (Points_Game - mean(Points_Game))/sd(Points_Game),
          Age_adj = (Age - mean(Age))/sd(Age),
          #need to add in Patrick Kane data for distance here
-         Sd_Distance = sqrt(Height_adj^2 + Weight_adj^2 + Points_adj^2 + Age_adj^2),
+         Sd_Distance = sqrt((Height_adj - (Patrick_Kane$Height - mean(Height))/sd(Height))^2 + 
+                              (Weight_adj - (Patrick_Kane$Weight - mean(Weight))/sd(Weight))^2 + 
+                              (Points_adj - (Patrick_Kane$Points_Game - mean(Points_Game))/sd(Points_Game))^2 + 
+                              (Age_adj - (Patrick_Kane$Age - mean(Age))/sd(Age))^2),
          #Min-Max Normalization
          Height_adj = (Height - min(Height))/(max(Height) - min(Height)),
          Weight_adj = (Weight - min(Weight))/(max(Weight) - min(Weight)),
@@ -101,7 +150,11 @@ Neighbors <- League %>%
                                   (Points_adj - (Patrick_Kane$Points_Game - min(Points_Game))/(max(Points_Game) - min(Points_Game)))^2 + 
                                   (Age_adj - (Patrick_Kane$Age - min(Age))/(max(Age) - min(Age)))^2),
          #Probability Density Normalization
-         Height_adj = ecdf(Height)(Height) - ecdf(Height)(Patrick_Kane$Height))
+         Height_adj = ecdf(Height)(Height) - ecdf(Height)(Patrick_Kane$Height),
+         Weight_adj = ecdf(Weight)(Weight) - ecdf(Weight)(Patrick_Kane$Weight),
+         Points_adj = ecdf(Points_Game)(Points_Game) - ecdf(Points_Game)(Patrick_Kane$Points_Game),
+         Age_adj = ecdf(Age)(Age) - ecdf(Age)(Patrick_Kane$Age),
+         ProbDen_Distance = sqrt(Height_adj^2 + Weight_adj^2 + Points_adj^2 + Age_adj^2))
 
 
 # Scale Normalization techniques ----
