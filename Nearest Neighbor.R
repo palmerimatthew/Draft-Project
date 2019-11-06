@@ -3,6 +3,7 @@ require(magrittr)
 require(tidyverse)
 require(ggplot2)
 require(gridExtra)
+require(MASS)
 
 Player_Details <- read_csv(here('Data', 'Player_Detail.csv'))
 Junior_Stats <- read_csv(here('Data', 'Player_Junior_Stats.csv'), guess_max = 40000) %>%
@@ -23,19 +24,22 @@ NHL_under_27 <- NHL_Stats %>%
             NHL_DPS = sum(NHL_DPS)) %>%
   mutate(NHL_PS = NHL_OPS + NHL_DPS)
 
-# Using Eric Staal draft year as test sample ----
+# Using Patrick Kane draft year as test sample ----
 
 #Just Eric Staal's draft year
-Eric_Staal <- Junior_Stats %>%
-  filter(ID == 3656 &
+Patrick_Kane <- Junior_Stats %>%
+  filter(ID == 9326 &
            Age > 18 &
-           Age < 19) %>%
+           Age < 19 &
+           League == 'OHL') %>%
   left_join(select(Player_Details, -Name), by = 'ID') %>%
   inner_join(select(NHL_under_27, -Name), by = 'ID')
 
 #filtering to just desired league
 League <- Junior_Stats %>%
-  filter(League == Eric_Staal$League)
+  filter(League == Patrick_Kane$League) %>%
+  inner_join(select(Player_Details, -Name), by = 'ID') %>%
+  filter(Position_Clean != 'RD' & Position_Clean != 'LD' & Position_Clean != 'D')
 
 League_Player_Details <- Player_Details %>%
   filter(ID %in% League$ID)
@@ -43,22 +47,26 @@ League_Player_Details <- Player_Details %>%
 #Distribution of variables for distance calculation ----
 
 #Weight: Normal
-plot(density(filter(League_Player_Details, !is.na(Weight))$Weight, kernel = 'gaussian'))
-x <- seq(130, 280, 0.1)
-lines(x, dnorm(x, 193, 15), col='red')
+plot(density(League_Player_Details$Weight, kernel = 'gaussian', na.rm = T))
+x <- seq(min(League_Player_Details$Weight, na.rm=T), max(League_Player_Details$Weight, na.rm=T), 0.1)
+temp <- fitdistr(filter(League_Player_Details, !is.na(Weight))$Weight, 'normal')
+lines(x, dnorm(x, temp$estimate[1], temp$estimate[2]), col='red')
 
 #Height: Normal
 plot(density(filter(League_Player_Details, !is.na(Weight))$Height, kernel = 'gaussian'))
-x <- seq(160, 210, 0.1)
-lines(x, dnorm(x, 184.5, 4.5), col='red')
+x <- seq(min(League_Player_Details$Height, na.rm=T), max(League_Player_Details$Height, na.rm=T), 0.1)
+temp <- fitdistr(filter(League_Player_Details, !is.na(Height))$Height, 'normal')
+lines(x, dnorm(x, temp$estimate[1], temp$estimate[2]), col='red')
 
 #Point Production: Gamma
 plot(density(League$Points_Game, kernel = 'gaussian'))
-x <- seq(0, 3.5, 0.01)
-lines(x-.08, dgamma(x, 1.75, 3.2), col='red')
+x <- seq(min(League$Points_Game, na.rm=T), max(League$Points_Game, na.rm=T), 0.01)
+temp <- fitdistr(League$Points_Game + 0.1, 'gamma')
+lines(x-.1, dgamma(x, temp$estimate[1], temp$estimate[2]), col='red')
 
 #Goals:
 plot(density(League$G, kernel = 'gaussian'))
+
 
 #Assists:
 plot(density(League$A, kernel = 'gaussian'))
@@ -70,6 +78,31 @@ plot(density(League$Age, kernel = 'gaussian'))
 # that since a child's age as it relates to junior hockey eligibility is determined on December 31, 
 # players that are born right after (in January) are going to be older and bigger, and thus look better, 
 # so they will have a better chance of getting choosen to play on travel teams and improve more.
+
+
+#Getting nearest neighbors for Patrick Kane ----
+Neighbors <- League %>%
+  inner_join(Player_Details, by = 'ID') %>%
+  mutate(Points_Game = TP/GP,
+         #Standard Deviation Normalization
+         Height_adj = (Height - mean(Height))/sd(Height),
+         Weight_adj = (Weight - mean(Weight))/sd(Weight),
+         Points_adj = (Points_Game - mean(Points_Game))/sd(Points_Game),
+         Age_adj = (Age - mean(Age))/sd(Age),
+         #need to add in Patrick Kane data for distance here
+         Sd_Distance = sqrt(Height_adj^2 + Weight_adj^2 + Points_adj^2 + Age_adj^2),
+         #Min-Max Normalization
+         Height_adj = (Height - min(Height))/(max(Height) - min(Height)),
+         Weight_adj = (Weight - min(Weight))/(max(Weight) - min(Weight)),
+         Points_adj = (Points_Game/max(Points_Game)),
+         Age_adj = (Age - min(Age))/(max(Age)-min(Age)),
+         MinMax_Distance = sqrt((Height_adj - (Patrick_Kane$Height - min(Height))/(max(Height) - min(Height)))^2 + 
+                                  (Weight_adj - (Patrick_Kane$Weight - min(Weight))/(max(Weight) - min(Weight)))^2 + 
+                                  (Points_adj - (Patrick_Kane$Points_Game - min(Points_Game))/(max(Points_Game) - min(Points_Game)))^2 + 
+                                  (Age_adj - (Patrick_Kane$Age - min(Age))/(max(Age) - min(Age)))^2),
+         #Probability Density Normalization
+         Height_adj = ecdf(Height)(Height) - ecdf(Height)(Patrick_Kane$Height))
+
 
 # Scale Normalization techniques ----
 
@@ -89,7 +122,9 @@ normalization_calc <- function(df, new_point, method) {
                  distance = sqrt((x_adj - (new_point[1] - x_mean)/x_sd)^2 + 
                                  (y_adj - (new_point[2] - y_mean)/y_sd)^2)) %>%
       select(x, y, distance)
-  } else if (method == 'MinMax') {
+  } 
+  #Normalized by the range (max - min)
+  else if (method == 'MinMax') {
     x_min = min(df$x)
     x_max = max(df$x)
     y_min = min(df$y)
@@ -100,7 +135,9 @@ normalization_calc <- function(df, new_point, method) {
                                  (y_adj - (new_point[2] - y_min)/(y_max - y_min))^2)) %>%
       select(x, y, distance)
     
-  } else if (method == 'ProbDenEmpir') {
+  } 
+  # Normalized by the empirical probability distribution
+  else if (method == 'ProbDenEmpir') {
     x_cdf = ecdf(df$x)
     y_cdf = ecdf(df$y)
     df <- mutate(df, x_dist = x_cdf(new_point[1]) - x_cdf(x),
@@ -172,10 +209,10 @@ grid.arrange(a,b,c,d, ncol = 2)
 
 ## Simulation 3: Normal vs Gamma with different scale
 
-x <- rnorm(1000, 100, 20)
-y <- rgamma(1000, 1, 1) + 5
+x <- rgamma(1000, 1, 1) + 5
+y <- rnorm(1000, 100, 20)
 df <- data.frame(x,y)
-new_data_point <- c(rnorm(1, 100, 20), rgamma(1000, 1, 1) + 5)
+new_data_point <- c(rgamma(1, 1, 1) + 5, rnorm(1, 100, 20))
 k <- 100
 
 a <- df %>%
