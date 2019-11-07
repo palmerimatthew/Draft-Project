@@ -86,7 +86,9 @@ plot(density(League$Age, kernel = 'gaussian'))
 distance_calc <- function(dataset, new_point, variables_used, weights, method) {
   #necessary to join output back to original dataframe
   new_point <- select(new_point, one_of(colnames(dataset)))
-  dataset <- rbind(new_point, dataset) %>%
+  dataset <- dataset %>%
+    filter(ID != new_point$ID) %>%
+    rbind(new_point, .) %>%
     mutate(for_join = paste0(ID, Team))
   
   #default setting for weights
@@ -104,7 +106,8 @@ distance_calc <- function(dataset, new_point, variables_used, weights, method) {
     names[i] <- paste(names[i], 'distance', sep='_')
   }
   colnames(new_dataset) <- names
-  
+  left_join(dataset, new_dataset, by = 'for_join') %>%
+    select(-for_join)
 }
 
 adjusted_for_distance <- function(column, method) {
@@ -129,32 +132,11 @@ Neighbors <- League %>%
   filter(!is.na(Weight) &
            Age > Patrick_Kane$Age -0.5 &
            Age < Patrick_Kane$Age +0.5) %>%
-  mutate(Points_Game = TP/GP,
-         #Standard Deviation Normalization
-         Height_adj = (Height - mean(Height))/sd(Height),
-         Weight_adj = (Weight - mean(Weight))/sd(Weight),
-         Points_adj = (Points_Game - mean(Points_Game))/sd(Points_Game),
-         Age_adj = (Age - mean(Age))/sd(Age),
-         #need to add in Patrick Kane data for distance here
-         Sd_Distance = sqrt((Height_adj - (Patrick_Kane$Height - mean(Height))/sd(Height))^2 + 
-                              (Weight_adj - (Patrick_Kane$Weight - mean(Weight))/sd(Weight))^2 + 
-                              (Points_adj - (Patrick_Kane$Points_Game - mean(Points_Game))/sd(Points_Game))^2 + 
-                              (Age_adj - (Patrick_Kane$Age - mean(Age))/sd(Age))^2),
-         #Min-Max Normalization
-         Height_adj = (Height - min(Height))/(max(Height) - min(Height)),
-         Weight_adj = (Weight - min(Weight))/(max(Weight) - min(Weight)),
-         Points_adj = (Points_Game/max(Points_Game)),
-         Age_adj = (Age - min(Age))/(max(Age)-min(Age)),
-         MinMax_Distance = sqrt((Height_adj - (Patrick_Kane$Height - min(Height))/(max(Height) - min(Height)))^2 + 
-                                  (Weight_adj - (Patrick_Kane$Weight - min(Weight))/(max(Weight) - min(Weight)))^2 + 
-                                  (Points_adj - (Patrick_Kane$Points_Game - min(Points_Game))/(max(Points_Game) - min(Points_Game)))^2 + 
-                                  (Age_adj - (Patrick_Kane$Age - min(Age))/(max(Age) - min(Age)))^2),
-         #Probability Density Normalization
-         Height_adj = ecdf(Height)(Height) - ecdf(Height)(Patrick_Kane$Height),
-         Weight_adj = ecdf(Weight)(Weight) - ecdf(Weight)(Patrick_Kane$Weight),
-         Points_adj = ecdf(Points_Game)(Points_Game) - ecdf(Points_Game)(Patrick_Kane$Points_Game),
-         Age_adj = ecdf(Age)(Age) - ecdf(Age)(Patrick_Kane$Age),
-         ProbDen_Distance = sqrt(Height_adj^2 + Weight_adj^2 + Points_adj^2 + Age_adj^2))
+  mutate(Draft_Pick = if_else(is.na(Draft_Pick), 300, Draft_Pick)) %>%
+  distance_calc(Patrick_Kane, c('Height', 'Weight', 'Points_Game', 'PIM', 'Draft_Pick'), method = 'MinMax') %>%
+  mutate(distance = sqrt(Height_distance^2 + Weight_distance^2 + 
+                           10*(Points_Game_distance^2) + PIM_distance^2)) %>%
+  inner_join(select(NHL_under_27, -Name), by = 'ID')
 
 
 # Scale Normalization techniques ----
