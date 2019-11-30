@@ -7,10 +7,12 @@ require(ggplot2)
 require(gridExtra)
 require(wrapr)
 
-#Data Manipulation
+#Data Manipulation and functions ----
 
 Player_Details <- read_csv(here('Data', 'Player_Detail.csv')) %>%
-  rename(PlayerID = ID)
+  rename(PlayerID = ID) %>%
+  mutate(Forward_Defenseman = if_else(grepl('D', Position_Clean), 'D', 'F')) %>%
+  select(PlayerID:Position_Clean, Forward_Defenseman, Shoots:Weight)
 Junior_Stats <- read_csv(here('Data', 'Player_Junior_Stats.csv'), guess_max = 40000) %>%
   mutate(Points_Game = TP/GP,
          SeasonID = seq(1, nrow(.)),
@@ -45,6 +47,160 @@ NHL_under_27 <- NHL_Stats %>%
 # need to run the 'League' data.frame code below first
 
 
+#Functions
+
+smart_rbind <- function(table1, table2) {
+  if(length(names(table1)) == length(names(table2))) {
+    if(all(names(table1) == names(table2))) {
+      rbind(table1, table2)
+    }
+  } else {
+    colnames_table1 <- names(table1)
+    colnames_table2 <- names(table2)
+    not_table1 <- colnames_table2 %>%
+      .[!(colnames_table2 %in% colnames_table1)]
+    not_table2 <- colnames_table1 %>%
+      .[!(colnames_table1 %in% colnames_table2)]
+    
+    for (x in not_table1) {
+      table1 <- wrapr::let(alias = list(rname = x), expr = dplyr::mutate(table1, rname = NA))
+    }
+    
+    for (x in not_table2) {
+      table2 <- wrapr::let(alias = list(rname = x), expr = dplyr::mutate(table2, rname = NA))
+    }
+    
+    if(length(colnames_table1) > length(colnames_table2)) {
+      table2 <- dplyr::select(table2, colnames_table1)
+      rbind(table1, table2)
+    } else {
+      table1 <- dplyr::select(table1, colnames_table2)
+      rbind(table1, table2)
+    }
+  }
+}
+
+distance_calc <- function(dataset, new_point, variables_used, method) {
+  #necessary to join output back to original dataframe
+  new_point <- select(new_point, one_of(colnames(dataset)))
+  dataset <- dataset %>%
+    filter(PlayerID != new_point$PlayerID) %>%
+    smart_rbind(new_point, .) %>%
+    mutate(for_join = paste0(PlayerID, Team))
+  
+  new_dataset <- dataset %>%
+    select(for_join, one_of(variables_used))
+  
+  #normalizing each column
+  names <- colnames(new_dataset)
+  for (i in (2:ncol(new_dataset))) {
+    temp <- new_dataset[[i]] %>%
+      adjusted_for_distance(method)
+    new_dataset[,i] <- temp - temp[1]
+    names[i] <- paste(names[i], 'distance', sep='_')
+  }
+  colnames(new_dataset) <- names
+  left_join(dataset, new_dataset, by = 'for_join') %>%
+    select(-for_join)
+}
+
+adjusted_for_distance <- function(column, method) {
+  if (method == 'StDev') {
+    column_mean <- mean(column)
+    column_sd <- sd(column)
+    column_adj = (column - column_mean)/column_sd
+  } else if (method == 'MinMax') {
+    column_min <- min(column)
+    column_max <- max(column)
+    column_adj = (column - column_min)/(column_max - column_min)
+  } else if (method == 'ProbDenEmpir') {
+    column_cdf = ecdf(column)
+    column_adj = column_cdf(column)
+  } else if (method == 'ProbDenFit') {
+    
+  }
+  column_adj
+}
+
+permutations <- function(var1, var2, ...) {
+  return <- as.matrix(var1)
+  return <- permutation_helper(return, var2)
+  temp <- list(...)
+  for (x in temp) {
+    return <- permutation_helper(return, x)
+  }
+  return
+}
+
+permutation_helper <- function(df, list) {
+  df_length = nrow(df)
+  list_length = length(list)
+  new_df <- df
+  for(i in (2:list_length)) {
+    new_df <- rbind(new_df, df)
+  }
+  new_list <- rep(list[1], df_length)
+  for(x in list[-1]) {
+    new_list <- c(new_list, rep(x, df_length))
+  }
+  cbind(new_df, new_list)
+}
+
+normalization_calc <- function(df, new_point, method) {
+  #No normalization is done
+  if (method == 'None') {
+    df <- mutate(df, distance = sqrt((x - new_point[1])^2 + (y - new_point[2])^2))
+  } 
+  #Normalized with the Standard Deviation
+  else if (method == 'StDev') { 
+    x_mean = mean(df$x)
+    y_mean = mean(df$y)
+    x_sd = sd(df$x)
+    y_sd = sd(df$y)
+    df <- mutate(df, x_adj = (x - x_mean)/x_sd,
+                 y_adj = (y - y_mean)/y_sd,
+                 distance = sqrt((x_adj - (new_point[1] - x_mean)/x_sd)^2 + 
+                                   (y_adj - (new_point[2] - y_mean)/y_sd)^2)) %>%
+      select(x, y, distance)
+  } 
+  #Normalized by the range (max - min)
+  else if (method == 'MinMax') {
+    x_min = min(df$x)
+    x_max = max(df$x)
+    y_min = min(df$y)
+    y_max = max(df$y)
+    df <- mutate(df, x_adj = (x - x_min)/(x_max - x_min),
+                 y_adj = (y - y_min)/(y_max - y_min),
+                 distance = sqrt((x_adj - (new_point[1] - x_min)/(x_max - x_min))^2 +
+                                   (y_adj - (new_point[2] - y_min)/(y_max - y_min))^2)) %>%
+      select(x, y, distance)
+    
+  } 
+  # Normalized by the empirical probability distribution
+  else if (method == 'ProbDenEmpir') {
+    x_cdf = ecdf(df$x)
+    y_cdf = ecdf(df$y)
+    df <- mutate(df, x_dist = x_cdf(new_point[1]) - x_cdf(x),
+                 y_dist = y_cdf(new_point[2]) - y_cdf(y),
+                 distance = sqrt(x_dist^2 + y_dist^2)) %>%
+      select(x, y, distance)
+  } else if (method == 'ProbDenFit') {
+    
+  }
+  #graphing resulting neighborhood
+  df %>%
+    rbind(data.frame(x = new_point[1], y = new_point[2], distance = 0)) %>%
+    .[order(.$distance),] %>%
+    mutate(rank = seq(0, nrow(.) - 1),
+           type = case_when(rank == 0 ~ 'New Point',
+                            rank <= k ~ 'Neighbor',
+                            TRUE ~ 'Original'),
+           type = as.factor(type),
+           type = factor(type, levels = c('New Point', 'Neighbor', 'Original'))) %>%
+    .[order(.$rank, decreasing = T),] %>%
+    ggplot(aes(x = x, y = y, color = type)) + geom_point() + 
+    scale_color_manual(values = c('Red', 'Blue', 'Gray')) + theme_classic()
+}
 # Using Patrick Kane draft year as test sample ----
 
 #Just Eric Staal's draft year
@@ -103,48 +259,6 @@ plot(density(League$Age, kernel = 'gaussian'))
 
 #Getting nearest neighbors for Patrick Kane ----
 
-distance_calc <- function(dataset, new_point, variables_used, method) {
-  #necessary to join output back to original dataframe
-  new_point <- select(new_point, one_of(colnames(dataset)))
-  dataset <- dataset %>%
-    filter(PlayerID != new_point$PlayerID) %>%
-    rbind(new_point, .) %>%
-    mutate(for_join = paste0(PlayerID, Team))
-  
-  new_dataset <- dataset %>%
-    select(for_join, one_of(variables_used))
-  
-  #normalizing each column
-  names <- colnames(new_dataset)
-  for (i in (2:ncol(new_dataset))) {
-    temp <- new_dataset[[i]] %>%
-      adjusted_for_distance(method)
-    new_dataset[,i] <- temp - temp[1]
-    names[i] <- paste(names[i], 'distance', sep='_')
-  }
-  colnames(new_dataset) <- names
-  left_join(dataset, new_dataset, by = 'for_join') %>%
-    select(-for_join)
-}
-
-adjusted_for_distance <- function(column, method) {
-  if (method == 'StDev') {
-    column_mean <- mean(column)
-    column_sd <- sd(column)
-    column_adj = (column - column_mean)/column_sd
-  } else if (method == 'MinMax') {
-    column_min <- min(column)
-    column_max <- max(column)
-    column_adj = (column - column_min)/(column_max - column_min)
-  } else if (method == 'ProbDenEmpir') {
-    column_cdf = ecdf(column)
-    column_adj = column_cdf(column)
-  } else if (method == 'ProbDenFit') {
-    
-  }
-  column_adj
-}
-
 Neighbors <- League %>%
   filter(!is.na(Weight) &
            Age > Patrick_Kane$Age -0.5 &
@@ -161,29 +275,6 @@ k = 50
 
 
 # testing different weightings of distance variables: ----
-permutations <- function(var1, var2, ...) {
-  return <- as.matrix(var1)
-  return <- permutation_helper(return, var2)
-  temp <- list(...)
-  for (x in temp) {
-    return <- permutation_helper(return, x)
-  }
-  return
-}
-
-permutation_helper <- function(df, list) {
-  df_length = nrow(df)
-  list_length = length(list)
-  new_df <- df
-  for(i in (2:list_length)) {
-    new_df <- rbind(new_df, df)
-  }
-  new_list <- rep(list[1], df_length)
-  for(x in list[-1]) {
-    new_list <- c(new_list, rep(x, df_length))
-  }
-  cbind(new_df, new_list)
-}
 weighting_test <- permutations(seq(0,4), seq(0,4), seq(0,10), seq(0,4))
 estimation <- rep(0, nrow(weighting_test))
 
@@ -193,7 +284,7 @@ for (i in (1:nrow(weighting_test))) {
     filter(!is.na(Weight) &
              Age > Patrick_Kane$Age -0.5 &
              Age < Patrick_Kane$Age +0.5) %>%
-    distance_calc(Patrick_Kane, c('Height', 'Weight', 'Points_Game', 'PIM'), method = 'MinMax') %>%
+    distance_calc(Patrick_Kane, c('Height', 'Weight', 'Points_Game', 'PIM'), method = 'ProbDenEmpir') %>%
     mutate(distance = sqrt(temp[1]*(Height_distance^2) + temp[2]*(Weight_distance^2) + 
                              temp[3]*(Points_Game_distance^2) + temp[4]*(PIM_distance^2))) %>%
     left_join(select(NHL_under_27, -Name), by = 'PlayerID') %>%
@@ -207,66 +298,83 @@ weighting_test <- cbind(weighting_test, estimation)
 
 
 #Reducing squared residuals with multiple players tested ----
+draft_2007_test <- Junior_Stats %>%
+  inner_join(select(Player_Details, -Name), by='PlayerID') %>%
+  filter(Draft_Year == 2007 &
+           Age >= 18 & Age <= 19 &
+           League == 'OHL') %>%
+  group_by(PlayerID, Name, Age, Forward_Defenseman, Height, Weight) %>%
+  summarise(GP = sum(GP),
+            G = sum(G),
+            A = sum(A),
+            TP = sum(TP),
+            PIM = sum(PIM),
+            X... = sum(X...)) %>%
+  mutate(Points_Game = TP/GP,
+         PIM_Game = PIM/GP) %>%
+  left_join(select(NHL_under_27, -Name), by='PlayerID') %>%
+  ungroup() %>%
+  replace(., is.na(.), 0)
 
+Possible_Neighbors <- Junior_Stats %>%
+  mutate(PIM_Game = PIM/GP) %>%
+  inner_join(select(Player_Details, -Name), by='PlayerID') %>%
+  filter(League == 'OHL' &
+           Season_Start <= 1997 &
+           !is.na(Weight))
 
+weighting_test <- permutations(seq(1,5), seq(1,5), seq(5,50, by = 5), seq(1,5), seq(25, 100, by = 25)) %>%
+  as.data.frame()
+colnames(weighting_test) <- c('Height','Weight', 'Points_Game', 'PIM_Game', 'K')
+
+#k = 50
+
+#outside for loop is each player in draft_2007_test
+#inside for loop is each different weighting in weighting_test
+for (player in draft_2007_test$PlayerID) {
+  player_data <- filter(draft_2007_test, PlayerID == player)
+  player_name <- player_data %$%
+    Name %>%
+    gsub(' ', '_', .)
+  Neighbors <- Possible_Neighbors %>%
+    filter(Age <= player_data$Age + 0.5 & Age >= player_data$Age - 0.5 &
+             Forward_Defenseman == player_data$Forward_Defenseman) %>%
+    distance_calc(player_data, c('Height', 'Weight', 'Points_Game', 'PIM_Game'), method = 'StDev')
+  estimation <- numeric(nrow(weighting_test))
+  for(i in (1:nrow(weighting_test))) {
+    temp <- weighting_test[i,]
+    temp_neighbors <- Neighbors %>%
+      mutate(distance = sqrt(temp$Height*(Height_distance^2) + temp$Weight*(Weight_distance^2) + 
+                               temp$Points_Game*(Points_Game_distance^2) + temp$PIM_Game*(PIM_Game_distance^2))) %>%
+      left_join(select(NHL_under_27, -Name), by = 'PlayerID') %>%
+      .[-1,] %>%
+      .[order(.$distance),] %>%
+      .[1:temp$K,] %>%
+      replace(., is.na(.), 0)
+    estimation[i] <- player_data$NHL_PS - weighted.mean(temp_neighbors$NHL_PS, 1/temp_neighbors$distance)
+  }
+  assign(player_name, estimation)
+  weighting_test <- let(alias = list(rname = player_name), expr = cbind(weighting_test, rname))
+}
+
+weighting_test <- mutate(weighting_test, residual_sq = 0)
+
+for(column in names(weighting_test)[5:ncol(weighting_test)]) {
+  temp <- let(alias = list(rname = column), expr = weighting_test$rname)
+  weighting_test$residual_sq = weighting_test$residual_sq + temp*temp
+}
+
+test_ranking <- weighting_test[order(weighting_test$residual_sq),] %>%
+  .[1,] %>%
+  gather(Player, Residual, 6:ncol(.)) %>%
+  left_join((draft_2007_test %>%
+               mutate(Player = gsub(' ', '_', Name)) %>%
+               select(Player, NHL_PS)), by='Player') %>%
+  mutate(Prediction = NHL_PS - Residual)
+
+f
 
 # Scale Normalization techniques ----
-
-normalization_calc <- function(df, new_point, method) {
-  #No normalization is done
-  if (method == 'None') {
-    df <- mutate(df, distance = sqrt((x - new_point[1])^2 + (y - new_point[2])^2))
-  } 
-  #Normalized with the Standard Deviation
-  else if (method == 'StDev') { 
-    x_mean = mean(df$x)
-    y_mean = mean(df$y)
-    x_sd = sd(df$x)
-    y_sd = sd(df$y)
-    df <- mutate(df, x_adj = (x - x_mean)/x_sd,
-                 y_adj = (y - y_mean)/y_sd,
-                 distance = sqrt((x_adj - (new_point[1] - x_mean)/x_sd)^2 + 
-                                 (y_adj - (new_point[2] - y_mean)/y_sd)^2)) %>%
-      select(x, y, distance)
-  } 
-  #Normalized by the range (max - min)
-  else if (method == 'MinMax') {
-    x_min = min(df$x)
-    x_max = max(df$x)
-    y_min = min(df$y)
-    y_max = max(df$y)
-    df <- mutate(df, x_adj = (x - x_min)/(x_max - x_min),
-                 y_adj = (y - y_min)/(y_max - y_min),
-                 distance = sqrt((x_adj - (new_point[1] - x_min)/(x_max - x_min))^2 +
-                                 (y_adj - (new_point[2] - y_min)/(y_max - y_min))^2)) %>%
-      select(x, y, distance)
-    
-  } 
-  # Normalized by the empirical probability distribution
-  else if (method == 'ProbDenEmpir') {
-    x_cdf = ecdf(df$x)
-    y_cdf = ecdf(df$y)
-    df <- mutate(df, x_dist = x_cdf(new_point[1]) - x_cdf(x),
-                 y_dist = y_cdf(new_point[2]) - y_cdf(y),
-                 distance = sqrt(x_dist^2 + y_dist^2)) %>%
-      select(x, y, distance)
-  } else if (method == 'ProbDenFit') {
-    
-  }
-  #graphing resulting neighborhood
-  df %>%
-    rbind(data.frame(x = new_point[1], y = new_point[2], distance = 0)) %>%
-    .[order(.$distance),] %>%
-    mutate(rank = seq(0, nrow(.) - 1),
-           type = case_when(rank == 0 ~ 'New Point',
-                            rank <= k ~ 'Neighbor',
-                            TRUE ~ 'Original'),
-           type = as.factor(type),
-           type = factor(type, levels = c('New Point', 'Neighbor', 'Original'))) %>%
-    .[order(.$rank, decreasing = T),] %>%
-    ggplot(aes(x = x, y = y, color = type)) + geom_point() + 
-    scale_color_manual(values = c('Red', 'Blue', 'Gray')) + theme_classic()
-}
 
 ## Simulation 1: Normal vs Gamma with similar scale
 
