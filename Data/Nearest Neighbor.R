@@ -1,3 +1,4 @@
+require(readr)
 require(here)
 require(magrittr)
 require(MASS)
@@ -6,14 +7,29 @@ require(ggplot2)
 require(gridExtra)
 require(wrapr)
 
-Player_Details <- read_csv(here('Data', 'Player_Detail.csv'))
-Junior_Stats <- read_csv(here('Data', 'Player_Junior_Stats.csv'), guess_max = 40000) %>%
-  mutate(Points_Game = TP/GP)
-NHL_Stats <- read_csv(here('Data', 'Player_NHL_Stats.csv'), guess_max = 8000)
+#Data Manipulation
 
+Player_Details <- read_csv(here('Data', 'Player_Detail.csv')) %>%
+  rename(PlayerID = ID)
+Junior_Stats <- read_csv(here('Data', 'Player_Junior_Stats.csv'), guess_max = 40000) %>%
+  mutate(Points_Game = TP/GP,
+         SeasonID = seq(1, nrow(.)),
+         Season_Start = as.numeric(gsub('-(.*)', '', Season))) %>%
+  rename(PlayerID = ID) %>%
+  select(SeasonID, PlayerID, Name, Season, Season_Start, Age:Points_Game)
+NHL_Stats <- read_csv(here('Data', 'Player_NHL_Stats.csv'), guess_max = 8000) %>%
+  rename(PlayerID = ID)
+
+#Team_rankings
+
+Team_Rank <- Junior_Stats %>%
+  group_by(Season_Start, League, Team) %>%
+  summarise(players = n())
+
+#NHL production under 27 summary
 NHL_under_27 <- NHL_Stats %>%
   filter(Age < 27) %>%
-  group_by(ID, Name) %>%
+  group_by(PlayerID, Name) %>%
   summarise(NHL_GP = sum(NHL_GP),
             NHL_G = sum(NHL_G),
             NHL_A = sum(NHL_A),
@@ -25,25 +41,29 @@ NHL_under_27 <- NHL_Stats %>%
             NHL_DPS = sum(NHL_DPS)) %>%
   mutate(NHL_PS = NHL_OPS + NHL_DPS)
 
+#addition of player production rank for team (This is just done for the OHL (for Patrick Kane))
+# need to run the 'League' data.frame code below first
+
+
 # Using Patrick Kane draft year as test sample ----
 
 #Just Eric Staal's draft year
 Patrick_Kane <- Junior_Stats %>%
-  filter(ID == 9326 &
+  filter(PlayerID == 9326 &
            Age > 18 &
            Age < 19 &
            League == 'OHL') %>%
-  left_join(select(Player_Details, -Name), by = 'ID') %>%
-  inner_join(select(NHL_under_27, -Name), by = 'ID')
+  left_join(select(Player_Details, -Name), by = 'PlayerID') %>%
+  inner_join(select(NHL_under_27, -Name), by = 'PlayerID')
 
 #filtering to just desired league
 League <- Junior_Stats %>%
   filter(League == Patrick_Kane$League) %>%
-  inner_join(select(Player_Details, -Name), by = 'ID') %>%
+  inner_join(select(Player_Details, -Name), by = 'PlayerID') %>%
   filter(Position_Clean != 'RD' & Position_Clean != 'LD' & Position_Clean != 'D')
 
 League_Player_Details <- Player_Details %>%
-  filter(ID %in% League$ID)
+  filter(PlayerID %in% League$PlayerID)
 
 #Distribution of variables for distance calculation ----
 
@@ -83,16 +103,13 @@ plot(density(League$Age, kernel = 'gaussian'))
 
 #Getting nearest neighbors for Patrick Kane ----
 
-distance_calc <- function(dataset, new_point, variables_used, weights, method) {
+distance_calc <- function(dataset, new_point, variables_used, method) {
   #necessary to join output back to original dataframe
   new_point <- select(new_point, one_of(colnames(dataset)))
   dataset <- dataset %>%
-    filter(ID != new_point$ID) %>%
+    filter(PlayerID != new_point$PlayerID) %>%
     rbind(new_point, .) %>%
-    mutate(for_join = paste0(ID, Team))
-  
-  #default setting for weights
-  weights <- rep(1, length(variables_used))
+    mutate(for_join = paste0(PlayerID, Team))
   
   new_dataset <- dataset %>%
     select(for_join, one_of(variables_used))
@@ -132,11 +149,65 @@ Neighbors <- League %>%
   filter(!is.na(Weight) &
            Age > Patrick_Kane$Age -0.5 &
            Age < Patrick_Kane$Age +0.5) %>%
-  mutate(Draft_Pick = if_else(is.na(Draft_Pick), 300, Draft_Pick)) %>%
-  distance_calc(Patrick_Kane, c('Height', 'Weight', 'Points_Game', 'PIM', 'Draft_Pick'), method = 'MinMax') %>%
+  distance_calc(Patrick_Kane, c('Height', 'Weight', 'Points_Game', 'PIM'), method = 'MinMax') %>%
   mutate(distance = sqrt(Height_distance^2 + Weight_distance^2 + 
                            10*(Points_Game_distance^2) + PIM_distance^2)) %>%
-  inner_join(select(NHL_under_27, -Name), by = 'ID')
+  left_join(select(NHL_under_27, -Name), by = 'PlayerID')
+
+# condensing information to single row
+
+# setting k = 50. will want to actually decide this before making a final model
+k = 50
+
+
+# testing different weightings of distance variables: ----
+permutations <- function(var1, var2, ...) {
+  return <- as.matrix(var1)
+  return <- permutation_helper(return, var2)
+  temp <- list(...)
+  for (x in temp) {
+    return <- permutation_helper(return, x)
+  }
+  return
+}
+
+permutation_helper <- function(df, list) {
+  df_length = nrow(df)
+  list_length = length(list)
+  new_df <- df
+  for(i in (2:list_length)) {
+    new_df <- rbind(new_df, df)
+  }
+  new_list <- rep(list[1], df_length)
+  for(x in list[-1]) {
+    new_list <- c(new_list, rep(x, df_length))
+  }
+  cbind(new_df, new_list)
+}
+weighting_test <- permutations(seq(0,4), seq(0,4), seq(0,10), seq(0,4))
+estimation <- rep(0, nrow(weighting_test))
+
+for (i in (1:nrow(weighting_test))) {
+  temp <- weighting_test[i,]
+  Neighbors <- League %>%
+    filter(!is.na(Weight) &
+             Age > Patrick_Kane$Age -0.5 &
+             Age < Patrick_Kane$Age +0.5) %>%
+    distance_calc(Patrick_Kane, c('Height', 'Weight', 'Points_Game', 'PIM'), method = 'MinMax') %>%
+    mutate(distance = sqrt(temp[1]*(Height_distance^2) + temp[2]*(Weight_distance^2) + 
+                             temp[3]*(Points_Game_distance^2) + temp[4]*(PIM_distance^2))) %>%
+    left_join(select(NHL_under_27, -Name), by = 'PlayerID') %>%
+    .[-1,] %>%
+    .[order(.$distance),] %>%
+    .[1:k,] %>%
+    replace(., is.na(.), 0)
+  estimation[i] <- weighted.mean(Neighbors$NHL_PS, 1/Neighbors$distance)
+}
+weighting_test <- cbind(weighting_test, estimation)
+
+
+#Reducing squared residuals with multiple players tested ----
+
 
 
 # Scale Normalization techniques ----
