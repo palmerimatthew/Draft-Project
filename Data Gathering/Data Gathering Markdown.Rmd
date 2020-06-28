@@ -93,7 +93,7 @@ Information_df <-
   dplyr::mutate(columns = as.character(columns),
                 data = as.character(data)) %>%
   tidyr::pivot_wider(names_from = columns, values_from = data)
-select(data.frame(Information_df), Name, Date.of.Birth, Position, Height, Weight, Drafted)
+Information_df <- dplyr::select(data.frame(Information_df), Name, Date.of.Birth, Position, Height, Weight, Drafted)
 ```
 
 With the information now set-up as a dataframe, it is very easy to chose the information we want; we can simply use the 'select' function in dplyr. From above, we wanted to gather information on Evgeny Kuznetsov's height, weight, position, date of birth, and when he was drafted. As we can see above, it is relatively easy to get the information we want using the dataframe made above. However, you'll notice that more work has to be done on several of these columns:
@@ -114,4 +114,30 @@ Hockey Reference is an NHL-specific data warehouse founded by a Grinnell alum I 
 # Code Appendix
 
 ### Cleaning up Weight/Height from eliteprospects
+
+To clean up the height and weight from eliteprospects, we can take advantage of the seperating character '/' using the 'separate' function in tidyr. We will preserve both measurements in their metric form. We first split the height/weight into the imperial and metric components using tidyr. We can then remove the 'cm' and 'kg' suffixes, and turn these characters now into numbers.
+
+```{r, height weight cleaning}
+Information_df <- 
+  Information_df %>%
+  tidyr::separate(Height, into = c('Imperial_Height', 'Metric_Height'), sep = '/') %>%
+  tidyr::separate(Weight, into = c('Imperial_Weight', 'Metric_Weight'), sep = '/') %>%
+  dplyr::mutate(Height = gsub(' cm', '', Metric_Height),
+         Height = as.numeric(Height),
+         Weight = gsub(' kg', '', Metric_Weight),
+         Weight = as.numeric(Weight)) %>%
+  dplyr::select(Name, Date.of.Birth, Position, Height, Weight, Drafted)
+Information_df
+```
+
+Cleaning up the Drafted column seems like it would be harder, but there is a nice trick that we can do. While we only originally wanted the draft pick used on Kuznetsov, I will actually go through the process of seperating the Drafted column into the year, the round, the pick, and the team. The way we will do this is to remove any of the unecessary words in this column, and then separate the string by spaces. However, the team name 'Washington Capitals' would be split into two words. Even worse, there are some teams with three words, like St. Louis Blues. To deal with this, tidyr's separate has a nice parameter called 'extra'. We can set this parameter to 'merge', which will mean that we only split the string along spaces a certain number of times.
+
+```{r Drafted cleaning}
+Information_df <- Information_df %>%
+  dplyr::mutate(Drafted = gsub('round ', '', Drafted),
+         Drafted = gsub('#', '', Drafted),
+         Drafted = gsub('overall by', '', Drafted)) %>%
+  tidyr::separate(Drafted, into = c('Draft_Year', 'Draft_Round', 'Draft_Pick', 'Draft_Team'), sep = ' ', extra = 'merge')
+Information_df
+```
 
