@@ -1,0 +1,117 @@
+---
+title: "Data Gathering"
+author: "Matthew Palmeri"
+date: "6/27/2020"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, comment = NA)
+```
+
+This document will serve as the first in a series of documents on the process of building a NHL draft rank model that can outperform the actual NHL draft order. This post will document the process of gathering the data necessary to build such a model, including details on the web scrapping that was done (and later turned into R packages that can be installed and run on your own machines), to the data engineering needed to properly join together data from different sources and different websites. This will include code, outputs, and prose that will make the work easy to follow and reproduce if needed.
+
+We will first talk about some preliminaries related to Setup and Packages before jumping into the scrapping of two important websites for Hockey data. This process will be illustrated using Evgeny/Yevgeny Kuznetsov, one of the most creative players in the league. He was also chosen to demonstrate the need to engineer a not-so-direct connection between the two sources of data.
+
+# Setup and Packages
+
+Before getting into the details of the data gathering process, we need to talk a bit about packages used and the level of understanding needed about several concepts. While I will attempt to explain the ideas of web scrapping and fuzzy name recognition for example, I certainly won't explain it as well as others can (or go into great detail). Because of this, I wanted to dedicate a bit of space towards some resources that have helped me understand some of the ideas used here:
+
+1. Web scrapping - Countless blog posts and youtube videos have been made on the concept of building systems to pull information off of websites. I wanted to point out a couple that were helpful to me:
+    * [Tidy Web Scrapping in R: Tutorial and Resources](https://towardsdatascience.com/tidy-web-scraping-in-r-tutorial-and-resources-ac9f72b4fe47)
+    * [rvest: easy web srapping in R (written by Hadley Wickham, Chief Scientist at RStudio)](https://blog.rstudio.com/2014/11/24/rvest-easy-web-scraping-with-r/)
+    * [Introduction to Data scraping with R (Tutorial written by my advisor at Grinnell College)](http://web.grinnell.edu/individuals/kuipers/stat2labs/Handouts/rtutorials/IntroDataScraping.html)
+    * [Beautiful Soup: Buid a Web Scraper With Python](https://realpython.com/beautiful-soup-web-scraper-python/)
+2. Fuzzy name matching - 
+3. Piping - One of the reasons I love R so much is the piping operator '%>%'. This operator is part of the tidyverse, and allows for easily readable sequences of data cleaning steps. This operator will be used at times in the document, and I advise you to familiarize yourself with the functionality of this operator.
+    * [Magrittr Tidyverse Overview](https://magrittr.tidyverse.org)
+    * [Simplify Your Code with %>%](https://uc-r.github.io/pipe)
+
+all of these packages are part of the 'tidyverse', a grouping of packages that are readily compatible with eachother, and that can make R code beautiful and readable. In addition, any function used from one of these packages will be prefaced with '::'. For example, using the mutate function in dplyr will be displayed as dplyr::mutate().
+
+```{r packages, message = F}
+require(dplyr)
+require(tidyr)
+require(stringr)
+require(magrittr)
+require(rvest)
+require(xml2)
+```
+
+# Eliteprospects Data Scraping
+
+Eliteprospects is the go-to resource for data from hockey leagues across the world. It includes data on over 750,000 players and over 250 leagues, but the information is restricted to player information like height, weight, age, etc., and basic playing stats like games played and point production. This database will be used primarily to supply the explanatory variables that we will use. [Yevgeny Kuznetsov's eliteprospects page can be found here.](https://www.eliteprospects.com/player/34777/yevgeni-kuznetsov) There are several pieces of information that we would like to get off of this website: Height, Weight, Birth Date (for more exact age calculations), Position, when he was drafted, and his production throughout his career. The first five are all contained in the table at the top (shown on the left side below), and the production data is contained in a table further down on the page (shown on the right side below).
+
+<p float="left">
+  <img src="image1.png" height="500" width="450" />
+  <img src="image2.png" height="500" width="450" /> 
+</p>
+
+```{r, EP_Website}
+EP_html <- xml2::read_html('https://www.eliteprospects.com/player/34777/yevgeni-kuznetsov')
+```
+
+To be able to actual understand how to pull the data from these different areas of the webpage, we need to dive into the HTML that built the webpage. The first thing that we want to do is use rvest to parse the website, before using add-ons like Safari's inspect element, or [SelectorGadget](https://selectorgadget.com). Looking at the HTML, we can see that 'Player Facts' section is within 'div' object with the class 'ep-list'. Instead of trying to access each piece of information within this table individually, we will do a little trick so that we only have to navigate to this part of the html once. We will then use the 'html_text' function to get all of the text within this HTML tag.
+
+```{r, Info Table}
+Information <- 
+  EP_html %>%
+  rvest::html_node('.ep-list') %>%
+  rvest::html_text()
+substr(Information, 1, 500)
+```
+
+We can see above the first 500 characters from the 'Player Facts' table. We can see that we need to deal with a lot of extra characters in the string. Lucky for us, another tidyverse package is '[stringr](https://stringr.tidyverse.org)', which can make the necessary string manipulations easy. We need to remove all of the newline characters and the extra spaces. A key observation from above is that all of the information we actually want (Date of Birth & May 19, 1992) are immediately followed by a newline character. This means that we can split the string by these newline characters, and then remove any of the values that are only spaces.
+
+```{r, String Manipulation}
+Information_List <- 
+  Information %>%
+  stringr::str_split('\n') %>%
+  .[[1]] %>%
+  trimws() %>%
+  .[. != '']
+Information_List
+```
+
+There are a couple pieces of information that we do not want (even before selecting the pieces of information we truly want, like height, weight, etc.). These include the 'Powered by' string, and everything after the 'Highlights' string. We can easily remove those using regular expressions. 
+
+```{r Removing Unnecessary Information}
+Information_List <- Information_List[!grepl('Powered by', Information_List)]
+Information_List <- Information_List[1:(grep('Highlights', Information_List) - 1)]
+Information_List
+```
+
+We now have all of the information in the 'Player Facts' area in a nice concise vector. The last thing that we need to do is to put this information into an easy digestable dataframe. To do this, we can notice that all of the odd entries are the data description (column name), and the even entries are the data themselves. We can then transfer the odd elements and even elements into their own vectors, and use them as the columns of a dataframe. We can then use the 'pivot_wider' funciton in tidyr to create a dataframe with a single row for Kuznetsov, with all of his information readily available through column names. You'll notice that I cheated adding the name of the player; in a repeatable set-up we would have to scrape the name from the website as well. 
+
+```{r Information Data Frame}
+columns <- Information_List[seq(1, length(Information_List), by = 2)]
+data <- Information_List[seq(2, length(Information_List), by = 2)]
+Information_df <- 
+  cbind(columns, data) %>%
+  rbind(c('Name', 'Yevgeny Kuznetsov'), .) %>%
+  as.data.frame() %>%
+  dplyr::mutate(columns = as.character(columns),
+                data = as.character(data)) %>%
+  tidyr::pivot_wider(names_from = columns, values_from = data)
+select(data.frame(Information_df), Name, Date.of.Birth, Position, Height, Weight, Drafted)
+```
+
+With the information now set-up as a dataframe, it is very easy to chose the information we want; we can simply use the 'select' function in dplyr. From above, we wanted to gather information on Evgeny Kuznetsov's height, weight, position, date of birth, and when he was drafted. As we can see above, it is relatively easy to get the information we want using the dataframe made above. However, you'll notice that more work has to be done on several of these columns:
+
+ * Height and weight are listed in both imperial and metric measurements. These columns would have to be cleaned to take a single numeric value.
+ * The 'Drafted' column is verbose; what we would really want is to pull out specific pieces of information, like the draft year, the draft pick, and the team that drafted the player. 
+
+
+
+# HockeyReference Data Scraping
+
+Hockey Reference is an NHL-specific data warehouse founded by a Grinnell alum I have had the pleasure to meet. This database will be used to supply our response variable of interest, which are Point-Shares, a measure that tries to account for the impact a specific player had on the success of his team in a given season. 
+
+# Engineering a Link between Eliteprospects Data and HockeyReference Data
+
+
+
+# Code Appendix
+
+### Cleaning up Weight/Height from eliteprospects
+
