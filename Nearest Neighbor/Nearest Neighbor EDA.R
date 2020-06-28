@@ -23,7 +23,6 @@ NHL_Stats <- read_csv(here('Data', 'Player_NHL_Stats.csv'), guess_max = 8000) %>
   rename(PlayerID = ID)
 
 #Team_rankings
-
 Team_Rank <- Junior_Stats %>%
   group_by(Season_Start, League, Team) %>%
   summarise(players = n())
@@ -203,7 +202,7 @@ normalization_calc <- function(df, new_point, method) {
 }
 # Using Patrick Kane draft year as test sample ----
 
-#Just Eric Staal's draft year
+#Just Patrick Kanes's draft year
 Patrick_Kane <- Junior_Stats %>%
   filter(PlayerID == 9326 &
            Age > 18 &
@@ -284,7 +283,7 @@ for (i in (1:nrow(weighting_test))) {
     filter(!is.na(Weight) &
              Age > Patrick_Kane$Age -0.5 &
              Age < Patrick_Kane$Age +0.5) %>%
-    distance_calc(Patrick_Kane, c('Height', 'Weight', 'Points_Game', 'PIM'), method = 'ProbDenEmpir') %>%
+    distance_calc(Patrick_Kane, c('Height', 'Weight', 'Points_Game', 'PIM'), method = 'StDev') %>%
     mutate(distance = sqrt(temp[1]*(Height_distance^2) + temp[2]*(Weight_distance^2) + 
                              temp[3]*(Points_Game_distance^2) + temp[4]*(PIM_distance^2))) %>%
     left_join(select(NHL_under_27, -Name), by = 'PlayerID') %>%
@@ -371,8 +370,18 @@ test_ranking <- weighting_test[order(weighting_test$residual_sq),] %>%
                mutate(Player = gsub(' ', '_', Name)) %>%
                select(Player, NHL_PS)), by='Player') %>%
   mutate(Prediction = NHL_PS - Residual)
+test_ranking <- draft_2007_test %>%
+  mutate(Player = gsub(' ', '_', Name)) %>%
+  select(PlayerID, Player) %>%
+  inner_join(test_ranking, by='Player') %>%
+  inner_join(select(Player_Details, PlayerID, Draft_Pick), by='PlayerID')
 
-f
+#spearman rank correlations between prediction and PS and draft ranking and PS
+cor.test(test_ranking$NHL_PS, test_ranking$Prediction, method = 'spearman')
+cor.test(test_ranking$NHL_PS, test_ranking$Draft_Pick, method = 'spearman')
+
+
+  
 
 # Scale Normalization techniques ----
 
