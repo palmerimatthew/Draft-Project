@@ -22,12 +22,14 @@ Before getting into the details of the data gathering process, we need to talk a
     * [rvest: easy web srapping in R (written by Hadley Wickham, Chief Scientist at RStudio)](https://blog.rstudio.com/2014/11/24/rvest-easy-web-scraping-with-r/)
     * [Introduction to Data scraping with R (Tutorial written by my advisor at Grinnell College)](http://web.grinnell.edu/individuals/kuipers/stat2labs/Handouts/rtutorials/IntroDataScraping.html)
     * [Beautiful Soup: Buid a Web Scraper With Python](https://realpython.com/beautiful-soup-web-scraper-python/)
-2. Fuzzy name matching - 
-3. Piping - One of the reasons I love R so much is the piping operator '%>%'. This operator is part of the tidyverse, and allows for easily readable sequences of data cleaning steps. This operator will be used at times in the document, and I advise you to familiarize yourself with the functionality of this operator.
+2. Regular Expressions - regular expressions are a standardized way to match complex string queries.
+    * 
+3. Fuzzy name matching - 
+4. Piping - One of the reasons I love R so much is the piping operator '%>%'. This operator is part of the tidyverse, and allows for easily readable sequences of data cleaning steps. This operator will be used at times in the document, and I advise you to familiarize yourself with the functionality of this operator (both to understand this post and to be a better R programmer).
     * [Magrittr Tidyverse Overview](https://magrittr.tidyverse.org)
     * [Simplify Your Code with %>%](https://uc-r.github.io/pipe)
 
-all of these packages are part of the 'tidyverse', a grouping of packages that are readily compatible with eachother, and that can make R code beautiful and readable. In addition, any function used from one of these packages will be prefaced with '::'. For example, using the mutate function in dplyr will be displayed as dplyr::mutate().
+all of these packages besides xml2 are part of the 'tidyverse', a group of packages that are readily compatible with eachother and can make R code beautiful and readable. In addition, any function used from one of these packages will be prefaced with '::'. For example, using the mutate function in dplyr will be displayed as dplyr::mutate().
 
 ```{r packages, message = F}
 require(dplyr)
@@ -51,7 +53,11 @@ Eliteprospects is the go-to resource for data from hockey leagues across the wor
 EP_html <- xml2::read_html('https://www.eliteprospects.com/player/34777/yevgeni-kuznetsov')
 ```
 
-To be able to actual understand how to pull the data from these different areas of the webpage, we need to dive into the HTML that built the webpage. The first thing that we want to do is use rvest to parse the website, before using add-ons like Safari's inspect element, or [SelectorGadget](https://selectorgadget.com). Looking at the HTML, we can see that 'Player Facts' section is within 'div' object with the class 'ep-list'. Instead of trying to access each piece of information within this table individually, we will do a little trick so that we only have to navigate to this part of the html once. We will then use the 'html_text' function to get all of the text within this HTML tag.
+To be able to actual understand how to pull the data from these different areas of the webpage, we need to dive into the HTML that built the webpage. The first thing that we want to do is use rvest to parse the website, before using add-ons like Safari's inspect element, or [SelectorGadget](https://selectorgadget.com). 
+
+### Gathering player information
+
+Looking at the HTML, we can see that 'Player Facts' section is within a 'div' object with the class 'ep-list'. Instead of trying to access each piece of information within this table individually, we will do a little trick so that we only have to navigate to this part of the html once. We will then use the 'html_text' function to get all of the text within this HTML tag.
 
 ```{r, Info Table}
 Information <- 
@@ -81,39 +87,25 @@ Information_List <- Information_List[1:(grep('Highlights', Information_List) - 1
 Information_List
 ```
 
-We now have all of the information in the 'Player Facts' area in a nice concise vector. The last thing that we need to do is to put this information into an easy digestable dataframe. To do this, we can notice that all of the odd entries are the data description (column name), and the even entries are the data themselves. We can then transfer the odd elements and even elements into their own vectors, and use them as the columns of a dataframe. We can then use the 'pivot_wider' funciton in tidyr to create a dataframe with a single row for Kuznetsov, with all of his information readily available through column names. You'll notice that I cheated adding the name of the player; in a repeatable set-up we would have to scrape the name from the website as well. 
+We now have all of the information in the 'Player Facts' area in a nice concise vector. The last thing that we need to do is to put this information into an easy digestable dataframe. To do this, we can notice that all of the odd entries are the data description (column name), and the even entries are the data themselves. We can then transfer the odd elements and even elements into their own vectors, and use them as the columns of a dataframe. We can then use the 'pivot_wider' funciton in tidyr to create a dataframe with a single row for Kuznetsov, with all of his information readily available through column names. 
 
 ```{r Information Data Frame}
 columns <- Information_List[seq(1, length(Information_List), by = 2)]
 data <- Information_List[seq(2, length(Information_List), by = 2)]
 Information_df <- 
   cbind(columns, data) %>%
-  rbind(c('Name', 'Yevgeny Kuznetsov'), .) %>%
   as.data.frame() %>%
   dplyr::mutate(columns = as.character(columns),
                 data = as.character(data)) %>%
   tidyr::pivot_wider(names_from = columns, values_from = data)
-Information_df <- dplyr::select(data.frame(Information_df), Name, Date.of.Birth, Position, Height, Weight, Drafted)
+Information_df <- dplyr::select(data.frame(Information_df), Date.of.Birth, Position, Height, Weight, Drafted)
+Information_df
 ```
 
 With the information now set-up as a dataframe, it is very easy to chose the information we want; we can simply use the 'select' function in dplyr. From above, we wanted to gather information on Evgeny Kuznetsov's height, weight, position, date of birth, and when he was drafted. As we can see above, it is relatively easy to get the information we want using the dataframe made above. However, you'll notice that more work has to be done on several of these columns:
 
  * Height and weight are listed in both imperial and metric measurements. These columns would have to be cleaned to take a single numeric value.
  * The 'Drafted' column is verbose; what we would really want is to pull out specific pieces of information, like the draft year, the draft pick, and the team that drafted the player. 
-
-
-
-# HockeyReference Data Scraping
-
-Hockey Reference is an NHL-specific data warehouse founded by a Grinnell alum I have had the pleasure to meet. This database will be used to supply our response variable of interest, which are Point-Shares, a measure that tries to account for the impact a specific player had on the success of his team in a given season. 
-
-# Engineering a Link between Eliteprospects Data and HockeyReference Data
-
-
-
-# Code Appendix
-
-### Cleaning up Weight/Height from eliteprospects
 
 To clean up the height and weight from eliteprospects, we can take advantage of the seperating character '/' using the 'separate' function in tidyr. We will preserve both measurements in their metric form. We first split the height/weight into the imperial and metric components using tidyr. We can then remove the 'cm' and 'kg' suffixes, and turn these characters now into numbers.
 
@@ -123,14 +115,14 @@ Information_df <-
   tidyr::separate(Height, into = c('Imperial_Height', 'Metric_Height'), sep = '/') %>%
   tidyr::separate(Weight, into = c('Imperial_Weight', 'Metric_Weight'), sep = '/') %>%
   dplyr::mutate(Height = gsub(' cm', '', Metric_Height),
-         Height = as.numeric(Height),
-         Weight = gsub(' kg', '', Metric_Weight),
-         Weight = as.numeric(Weight)) %>%
-  dplyr::select(Name, Date.of.Birth, Position, Height, Weight, Drafted)
+                Height = as.numeric(Height),
+                Weight = gsub(' kg', '', Metric_Weight),
+                Weight = as.numeric(Weight)) %>%
+  dplyr::select(Date.of.Birth, Position, Height, Weight, Drafted)
 Information_df
 ```
 
-Cleaning up the Drafted column seems like it would be harder, but there is a nice trick that we can do. While we only originally wanted the draft pick used on Kuznetsov, I will actually go through the process of seperating the Drafted column into the year, the round, the pick, and the team. The way we will do this is to remove any of the unecessary words in this column, and then separate the string by spaces. However, the team name 'Washington Capitals' would be split into two words. Even worse, there are some teams with three words, like St. Louis Blues. To deal with this, tidyr's separate has a nice parameter called 'extra'. We can set this parameter to 'merge', which will mean that we only split the string along spaces a certain number of times.
+Cleaning up the Drafted column seems like it would be harder, but there is a nice trick that we can do. While we only originally wanted the draft pick used on Kuznetsov, I will actually go through the process of seperating the Drafted column into the year, the round, the pick, and the team. The way we will do this is to remove any of the unecessary words in this column, and then separate the string by spaces. However, the team name 'Washington Capitals' would be split into two words. Even worse, there are some teams with three words, like the St. Louis Blues. To deal with this, tidyr's separate has a nice parameter called 'extra'. We can set this parameter to 'merge', which will mean that we only split the string along spaces a certain number of times.
 
 ```{r Drafted cleaning}
 Information_df <- Information_df %>%
@@ -140,4 +132,147 @@ Information_df <- Information_df %>%
   tidyr::separate(Drafted, into = c('Draft_Year', 'Draft_Round', 'Draft_Pick', 'Draft_Team'), sep = ' ', extra = 'merge')
 Information_df
 ```
+
+We now have a nice compact representation of the information that we wanted to grab from the 'Player Facts' table for Evgeny Kuznetsov. We can now move on to grabbing the playing stats information. 
+
+### Gathering data from stats table
+
+We need to again look at the html for the eliteprospects page, and find the stats table. Below is the html section for the stats table we want:
+
+<p float="left">
+  <img src="image3.png" height="500" width="900" />
+</p>
+
+We could go straight to the table we want in several ways: 
+
+ * Use html_node with the class of the table we want. However, the class label is very long and could be potentially unstable if trying to reuse this code on other players on eliteprospects.
+ * We can pull all of the tables on the webpage, and through trial and error, find the table we are looking for. Again though, this method could be unstable, as on some webpages the table we want might be the 4th and on others it might be the 5th (and if we use a method involving class labels, we run into the same issue as the first bullet point). 
+ * If you look above the table object, you will see a div object with the id 'league-stats'. To create a more stable approach to gather the information in the stats table, we can first find the node with 'league-stats' as the id (indicated by the '#' at the start of the string in the first html_node call), and then locate the tables within this object. 
+ 
+The third option is likely the most robust to small differences in html structure across player pages on eliteprospects. We can then use the 'html_table' function to convert the html representation of a table to an R dataframe.
+
+```{r Stats Table}
+Stats_Table <- 
+  EP_html %>%
+  rvest::html_node('#league-stats') %>%
+  rvest::html_node('table') %>%
+  rvest::html_table()
+head(Stats_Table)
+```
+
+You may have noticed that some of the column names are duplicated (GP for example); this is because the first section of stats are regular season play, and the second section of stats are post-season/playoff stats (which are seperated by a column of '|' characters). This poses a challenge, as we cannot use the 'select' function in dplyr: 
+
+```{r select not work, error = T}
+select(Stats_Table, GP)
+```
+
+What we need to do is seperate the data into regular season and post-season data. Lucky for us, this stats table is a staple of every eliteprospects page, and they all have the same structure, so we can use column numbers to help with this. As a side note, deciding when numbers were appropriate to grab certain elements was largely done by trial and error. We can thus split this stats table into regular season stats and playoff stats. We then need to fix the season column (S), as it only shows a value for the first row of data in a given year. To fix this, we can use the 'fill' function in tidyr.
+
+```{r Splitting StatsTable}
+Regular_Season <-
+  Stats_Table[,c(1:3, 4:9)] %>%
+  dplyr::mutate(S = if_else(S == '', NA_character_, S)) %>%
+  tidyr::fill(S, .direction = 'down')
+Playoff <- 
+  Stats_Table[,c(1:3, 12:17)] %>%
+  dplyr::mutate(S = if_else(S == '', NA_character_, S)) %>%
+  tidyr::fill(S, .direction = 'down')
+```
+
+```{r Regular Season}
+head(Regular_Season)
+```
+
+```{r Playoffs, dev=c('svg')}
+head(Playoff)
+```
+
+We can compare both of these to the website stats page, and see that we have both properly filled in the season column as well as seperating the stats table regular season and playoff stats table. The last thing that we need to do is add a unique id to each of the tables that we have made, so that we can join them together. We do not want to use just the name because there could be multiple players with the same name.
+
+### Adding unique identifier to each table
+
+One way that we could add a unique identifier for each player is to start with assigning the id of '1' to Kuznetsov, assign '2' to the next player, and so on. However, there is a better player to do this that can also help if there ever comes a time when we need to pull additional information from player's eliteprospects page. If we look back at the webpage for kuznetsov ('https://www.eliteprospects.com/player/34777/yevgeni-kuznetsov'), we will see the number 34777 in the address. We could use this number as the unique identifier. Before committing however, it is important to verify that this is in fact a unique identifier. While difficult to show for all players, one quick check can be entering the url 'https://www.eliteprospects.com/player/34777/', and seeing that it automatically redirects to Kuznetsov's page. There are two main advantages to using this id over the sequential id mentioned earlier:
+
+ * The sequential id requires that either information on all players that are wanted is pulled at the same time (unreasonable is you need data on more than 1000 players), or retaining information on what the last id was.
+ * The bigger advantage however is that we can then use this id and the player's name to generate the url for their eliteprospects page, which can make gathering new information from their page easier down the road (Yevgeni Kuznetsov is a unique name on eliteprospects, so you could use the search functionality to find his page again, but think about if you searched for the player 'Ben Smith', which of the 39 players is the one you want?). 
+ 
+We can readily get the id out of the url using some string manipulations. The first thing that we want to do is to remove everything before the '/player/' part. This is to make extracting the wanted id easier after splitting the string along the '/' characters, since the id will be the first entry after splitting the remaining part of the url. We can remove the unwanted part using the gsub function, and a regular expression.
+
+```{r, removing part of url}
+ID_Name <-
+  'https://www.eliteprospects.com/player/34777/yevgeni-kuznetsov' %>%
+  gsub('(.*)/player/', '', .)
+ID_Name
+```
+
+We can now break down the regular expression '(.*)/player/' so that you can understand what this is doing, and why it works well with the gsub function to remove the unwanted start of the url. 
+
+ * The '.' means any character.
+ * The '*' means repeated any number of times.
+ * The '(.*) basically means it will match any character
+
+When combined with '/player/' the regular expression '(.*)/player/' will match everything up to and including '/player/' in our URL string. We can then use the gsub function to replace this string match with the empty string, effectively removing the beginning of the string up to and including /player/. If this was confusing, don't fell bad! Regular expression are hard, and I struggle with them at times even after taking a class with a focus on regular expressions, Automaton, and Turing machines.
+
+Now that we have this desirable substring, we can then split the string along the '/' characters, and take the first split as the ID, and the second split as the Name. 
+
+```{r ID and Name}
+ID_Name <- str_split(ID_Name, '/')
+PlayerID <- ID_Name[[1]][1]
+ID_Name[[1]]
+```
+
+We now have the unique id. While it might be tempting to use this to get the player's name, there are couple reasons to not:
+
+ * The string for the name has '-' to delineate words; however some names naturally have hyphens (for example Marc-André Fleury), and we would have no way to tell when a hyphen is there for delineation purposes, or if it actually part of the name.
+ * There are several players that have accents in their name, which is not captured in the URL (for example, Marc-André Fleury).
+
+For the name, we will have to do some additional scrapping. Looking back at the html, the name of the player is a div object with the class '-ep-entity-header__name' (note the two underscores), so we can use a similar process as we have done before to get the name (shown all in one code chunk for brevity):
+
+```{r Name}
+Name <- 
+  EP_html %>%
+  rvest::html_node('.ep-entity-header__name') %>%
+  rvest::html_text() %>%
+  gsub('\n', '', .) %>%
+  trimws()
+Name
+```
+
+Now that we have the ID and Name, we can add the Name to our information table, and add the ID to all of our tables, so that we can join them together as we want. 
+
+```{r Adding ID and Name}
+Information_df <- 
+  Information_df %>%
+  dplyr::mutate(Name = Name) %>%
+  dplyr::mutate(PlayerID = PlayerID) %>%
+  dplyr::select(PlayerID, Name, Date.of.Birth:Draft_Team)
+Regular_Season <- cbind(PlayerID, Regular_Season)
+Playoff <- cbind(PlayerID, Playoff)
+```
+
+Now that we have each of the tables with the unique id, we can readily join together different tables as we see fit, using the 'PlayerID' as the joining factor. We now have the information that we wanted for Evgeny Kuznetsov, but we likely want to gather information on a bunch of players, for example all the players in the 2011 draft, of all the players that played in the KHL in 2011-2012. Instead of manually running all of the above code for each player, we can automate the process using either a draft page or a league page on eliteprospects. This process won't be shown here, but if you are truly interested you can find the code in the [package I wrote on github here](https://github.com/palmerimatthew/EPScraper).
+
+# HockeyReference Data Scraping
+
+Hockey Reference is an NHL-specific data warehouse founded by a Grinnell alum I have had the pleasure to meet. This database will be used to supply our response variable of interest, which are Point-Shares, a measure that tries to account for the impact a specific player had on the success of his team in a given season. This website has a bunch of data on players broken down by season, including possession stats, shot rates, awards, time on ice, and much more. This section will only concern getting the PS data, but a similar process can be done to extract onther tables from the website. If you are interested in the process of gathering data from multiple tables and combining them, you can look trhough the code I wrote for a package of scrappers for Hockey-Reference [here](https://github.com/palmerimatthew/HockeyRefScraper). 
+
+While we can see career point-shares in the top summary table, the response variable we truly want is their point-shares before they turned 27. The reason for this is that teams have control over their drafted players prior to them turning 27; when they turn 27 they can sign anywhere. This means that what we are trying to predict is the impact a player would have to the team that drafted them. Of course drafted players can be traded (see Filip Forsberg for worst-case scenario for the drafting team), but we want to avoid suggesting late-bloomers, when there success might not be with the team that drafted them. Because of this, we need to grab a season-by-season breakdown of their point-shares, which can be seen below.
+
+<p float="left">
+  <img src="image4.png" height="500" width="900" />
+</p>
+
+When looking at the html, this table has the id 'stats_misc_plus_nhl', which we can use to pull this table.
+
+```{r HockeyRef table pull}
+HockeyRef_html <- xml2::read_html('https://www.hockey-reference.com/players/k/kuzneev01.html')
+PS_Table <-
+  HockeyRef_html %>%
+  rvest::html_node('.table_outer_container')
+  rvest::html_table()
+```
+
+# Engineering a Link between Eliteprospects Data and HockeyReference Data
+
+
 
