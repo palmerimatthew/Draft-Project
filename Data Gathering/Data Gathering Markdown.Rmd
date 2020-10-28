@@ -2,14 +2,18 @@
 title: "Data Gathering"
 author: "Matthew Palmeri"
 date: "6/27/2020"
-output: html_document
+output: 
+  html_document:
+    toc: true
+    toc_depth: 5
+    toc_float: true
 ---
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE, comment = NA)
 ```
 
-This document will serve as the first in a series of documents on the process of building a NHL draft rank model that can outperform the actual NHL draft order. This post will document the process of gathering the data necessary to build such a model, including details on the web scrapping that was done (and later turned into R packages that can be installed and run on your own machines), to the data engineering needed to properly join together data from different sources and different websites. This will include code, outputs, and prose that will make the work easy to follow and reproduce if needed.
+This document will serve as the first in a series of documents on the process of building a NHL draft rank model that can outperform the actual NHL draft order. This post will document the process of gathering the data necessary to build such a model, including details on the web scrapping that was done (and later turned into R packages that can be installed and run on your own machines), to the data engineering needed to properly join together data from different sources and different websites. This will include code, outputs, and prose that will make the work easy to follow and reproducable if needed.
 
 We will first talk about some preliminaries related to Setup and Packages before jumping into the scrapping of two important websites for Hockey data. This process will be illustrated using Evgeny/Yevgeny Kuznetsov, one of the most creative players in the league. He was also chosen to demonstrate the need to engineer a not-so-direct connection between the two sources of data.
 
@@ -209,7 +213,7 @@ We can now break down the regular expression '(.*)/player/' so that you can unde
 
  * The '.' means any character.
  * The '*' means repeated any number of times.
- * The '(.*) basically means it will match any character
+ * The '(.*) basically means it will match any character sequence
 
 When combined with '/player/' the regular expression '(.*)/player/' will match everything up to and including '/player/' in our URL string. We can then use the gsub function to replace this string match with the empty string, effectively removing the beginning of the string up to and including /player/. If this was confusing, don't fell bad! Regular expression are hard, and I struggle with them at times even after taking a class with a focus on regular expressions, Automaton, and Turing machines.
 
@@ -262,14 +266,48 @@ While we can see career point-shares in the top summary table, the response vari
   <img src="image4.png" height="500" width="900" />
 </p>
 
-When looking at the html, this table has the id 'stats_misc_plus_nhl', which we can use to pull this table.
-
-```{r HockeyRef table pull}
+```{r}
 HockeyRef_html <- xml2::read_html('https://www.hockey-reference.com/players/k/kuzneev01.html')
+```
+```{r, HockeyRef table pull attempt, eval=F}
 PS_Table <-
   HockeyRef_html %>%
-  rvest::html_node('.table_outer_container')
+  rvest::html_node('#div_stats_misc_plus_nhl') %>%
   rvest::html_table()
+```
+When looking at the html, this table has the id 'stats_misc_plus_nhl', which we can use to pull this table. However, something odd happens when we try to run the above code. We get an error that indicates that there is no node in the website's html with the id 'div_stats_misc_plus_nhl' even though we just found it using inspect element. What is happening? While I am certainly not super knowledgable about html, what seems to be happening is the tables are commented, but still being displayed and rendered in the inspect element of the webpage. Because of this, we will have to be a little creative in how we get the information within these tables. 
+
+<p float="left">
+  <img src="image5.png" height="500" width="900" />
+</p>
+
+So looking back at the html for this table using inspect element (screenshot above), we can see that the commented table is contained within a div object with the id 'all_stats_misc_plus_nhl'. We can attempt to grab this object, and then try to parse out the comment. [This stackoverflow question was very helpful in coming up with a way to deal with this](https://stackoverflow.com/questions/40616357/how-to-scrape-tables-inside-a-comment-tag-in-html-with-r). 
+
+```{r}
+PS_Table <-
+  HockeyRef_html %>%
+  rvest::html_node('#all_stats_misc_plus_nhl') %>%
+  rvest::html_node(xpath = './/comment()') %>%
+  rvest::html_text() %>%
+  paste(collapse = '') %>%
+  xml2::read_html() %>%
+  rvest::html_table() %>%
+  .[[1]]
+dplyr::glimpse(PS_Table)
+```
+
+We see that this is the table we desire, but there are some complications; namely the column names are actually being represented in the first row of the dataframe, and the final row (not visible with glimpse) is Kuznetsov's career totals. One thing to notice is that the assigned column names do give us some information about the data (for example that certain statistics are Adjusted, or on a per game basis); however, we don't need this information since we are just interested in the point shares metrics (OPS, DPS, PS). 
+
+```{r}
+colnames(PS_Table) <- PS_Table[1,]
+PS_Table <- PS_Table %>%
+  .[(PS_Table$Season != 'Season' & PS_Table$Season != 'Career'),] %>%
+  select(Season:GP, OPS:PS, -Lg) %>%
+  mutate(Age = as.numeric(Age),
+         GP = as.numeric(GP),
+         OPS = as.numeric(OPS),
+         DPS = as.numeric(DPS),
+         PS = as.numeric(PS))
 ```
 
 # Engineering a Link between Eliteprospects Data and HockeyReference Data
